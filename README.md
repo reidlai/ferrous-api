@@ -1,5 +1,7 @@
 # ferrous-api
 
+[← Back to FerrousCX Root Architecture](https://github.com/reidlai/ferrous-cx)
+
 > **Contract-First Rust/Axum API Gateway for FerrousCX Platform**  
 > Driven by [Goa Design v3](https://goa.design/) as the declarative API specification DSL, generating OpenAPI v3 specifications, compiling them into strongly typed Rust traits via `rust-axum` OpenAPI generators, and streaming real-time events to the browser client via native **Axum SSE**.
 
