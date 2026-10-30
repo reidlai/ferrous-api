@@ -2,14 +2,14 @@
 
 [← Back to FerrousCX Root Architecture](https://github.com/reidlai/ferrous-cx)
 
-> **Contract-First Rust/Axum API Gateway for FerrousCX Platform**  
+> **Contract-First Rust/Axum API Service for FerrousCX Platform**  
 > Driven by [Goa Design v3](https://goa.design/) as the declarative API specification DSL, generating OpenAPI v3 specifications, compiling them into strongly typed Rust traits via `rust-axum` OpenAPI generators, and streaming real-time events to the browser client via native **Axum SSE**.
 
 ---
 
 ## 🎯 Architectural Role
 
-`ferrous-api` is the unified external API Gateway and real-time streaming hub for FerrousCX:
+`ferrous-api` is the unified contract-first HTTP API Service and real-time streaming hub for FerrousCX:
 1. **Declarative Contract Modeling (`design/`):** API routes, request/response models, validation constraints, and Kanidm JWT security scopes are declared in Goa Design DSL (`design/design.go`).
 2. **OpenAPI v3 Generation (`gen/openapi/`):** Goa compiles the DSL into a canonical OpenAPI v3 specification.
 3. **Rust-Axum Codegen (`src/generated/`):** `openapi-generator -g rust-axum` compiles the OpenAPI specification into strongly typed Rust traits, request decoders, and data transfer objects.
@@ -149,7 +149,7 @@ impl OrdersApi for OrdersHandler {
 ```bash
 cargo run --bin ferrous-api
 ```
-- **HTTP & SSE Gateway**: `http://localhost:8080`
+- **HTTP & SSE Service Endpoint**: `http://localhost:8080`
 - **Health Check**: `http://localhost:8080/healthz`
 
 ---
