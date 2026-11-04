@@ -57,7 +57,7 @@
 | **CQRS-ES Command Ingress** | Dispatches command mutations (`IssueCredit`, `CancelOrder`) to `ferrous-cqrses` and Apache Iggy `orders/intake` WAL, returning HTTP 202 upon `fsync` ACK. | Direct TCP / Iggy Wire Protocol |
 | **Axum SSE Streaming** | Streams live ticket updates, agent thoughts, and SLA breach warnings directly to `ferrous-frontend` via native Axum SSE with `CancellationToken` cancellation. | Server-Sent Events (`axum::response::sse::Sse`) |
 | **Historical Analytics Ingress** | In-process Apache DataFusion (`Arc<SessionContext>`) scanning Delta Lake historical partitions in <3ms. | In-Process Vectorized SQL |
-| **Replay Orchestration** | Triggers, pauses, and monitors historical dataset replay sessions managed by `stream-replay-rs`. | HTTP Control API |
+| **Replay Telemetry (read-only)** | Reports replay rate, high watermark and consumer lag for `olist/orders_stream` to the Replay Monitor in `ferrous-frontend` (FR-30). There is no start, pause or speed control: replay is never controlled from the platform. | HTTP `GET` / Axum SSE |
 
 ---
 
