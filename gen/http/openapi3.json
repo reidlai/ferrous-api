@@ -1,0 +1,972 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "FerrousCX Contract-First Axum API Service",
+    "description": "Contract-First HTTP API Service and SSE real-time streaming hub for the FerrousCX Platform.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local development server"
+    }
+  ],
+  "paths": {
+    "/api/v1/commands/orders/issue-credit": {
+      "post": {
+        "tags": ["orders"],
+        "summary": "Dispatch IssueCourtesyCredit command to intake WAL",
+        "description": "Dispatch IssueCourtesyCredit command to intake WAL",
+        "operationId": "orders#issue_credit",
+        "security": [
+          {
+            "jwt_bearer": ["api:write"]
+          }
+        ],
+        "requestBody": {
+          "description": "Payload for issuing a courtesy credit concession on an order",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueCreditRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandAcceptedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Malformed payload or missing required fields",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Missing or invalid JWT token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - Insufficient permissions for command dispatch",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity - Semantic validation failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error - Command dispatch or WAL fsync failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/commands/orders/cancel": {
+      "post": {
+        "tags": ["orders"],
+        "summary": "Dispatch CancelOrder command to intake WAL",
+        "description": "Dispatch CancelOrder command to intake WAL",
+        "operationId": "orders#cancel_order",
+        "security": [
+          {
+            "jwt_bearer": ["api:write"]
+          }
+        ],
+        "requestBody": {
+          "description": "Payload for canceling an existing order",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandAcceptedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Malformed payload or missing required fields",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Missing or invalid JWT token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - Insufficient permissions for command dispatch",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity - Semantic validation failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error - Command dispatch or WAL fsync failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orders/{order_id}": {
+      "get": {
+        "tags": ["queries"],
+        "summary": "Fetch single order details by ID from Delta Lake",
+        "description": "Fetch single order details by ID from Delta Lake",
+        "operationId": "queries#get_order",
+        "security": [
+          {
+            "jwt_bearer": ["api:read"]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "description": "Unique order identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "ord-98234-x"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderDetails"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Invalid query parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Missing or invalid JWT token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found - Order record does not exist",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error - Lakehouse scan execution failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orders": {
+      "get": {
+        "tags": ["queries"],
+        "summary": "Query paginated orders from Delta Lake table",
+        "description": "Query paginated orders from Delta Lake table",
+        "operationId": "queries#list_orders",
+        "security": [
+          {
+            "jwt_bearer": ["api:read"]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum records to return",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 50,
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Record offset for pagination",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 0,
+              "minimum": 0
+            }
+          },
+          {
+            "name": "customer_id",
+            "in": "query",
+            "description": "Optional filter by customer ID",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Optional filter by order status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Invalid query parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Missing or invalid JWT token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error - Lakehouse scan execution failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events/stream": {
+      "get": {
+        "tags": ["streams"],
+        "summary": "Stream domain events and AI agent thoughts over native SSE",
+        "description": "Stream domain events and AI agent thoughts over native SSE",
+        "operationId": "streams#event_stream",
+        "security": [
+          {
+            "jwt_bearer": ["api:read"]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "query",
+            "description": "Optional filter by order ID",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "event_types",
+            "in": "query",
+            "description": "Optional comma-separated event types",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainEventStreamItem"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Invalid stream parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Missing or invalid JWT token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error - Stream initialization failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/benchmarks/{run_id}/stream": {
+      "get": {
+        "tags": ["streams"],
+        "summary": "Stream real-time TTFT and token performance metrics over SSE",
+        "description": "Stream real-time TTFT and token performance metrics over SSE",
+        "operationId": "streams#benchmark_stream",
+        "security": [
+          {
+            "jwt_bearer": ["api:read"]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Benchmark execution run ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "bench-run-842"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/BenchmarkTelemetryItem"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - Invalid stream parameters",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Missing or invalid JWT token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found - Run ID not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error - Stream initialization failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/telemetry/pipeline/stream": {
+      "get": {
+        "tags": ["streams"],
+        "summary": "Stream streaming pipeline watermark lag and commit counts over SSE",
+        "description": "Stream streaming pipeline watermark lag and commit counts over SSE",
+        "operationId": "streams#pipeline_telemetry_stream",
+        "security": [
+          {
+            "jwt_bearer": ["api:read"]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineTelemetryItem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Missing or invalid JWT token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error - Stream initialization failure",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "jwt_bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Kanidm JWT Bearer token authentication"
+      }
+    },
+    "schemas": {
+      "InvalidParam": {
+        "type": "object",
+        "description": "Validation error detail for a specific request parameter or field",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Field or parameter name that failed validation",
+            "example": "amount_cents"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Explanation of why validation failed",
+            "example": "must be greater than 0"
+          }
+        },
+        "required": ["name", "reason"]
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "description": "RFC 7807 conformant Problem Details error envelope",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "URI reference identifying problem type",
+            "default": "about:blank",
+            "example": "urn:ferrouscx:error:validation"
+          },
+          "title": {
+            "type": "string",
+            "description": "Short human-readable summary of problem type",
+            "example": "Invalid Request Payload"
+          },
+          "status": {
+            "type": "integer",
+            "description": "HTTP status code",
+            "example": 400
+          },
+          "detail": {
+            "type": "string",
+            "description": "Human-readable explanation specific to this occurrence",
+            "example": "Field amount_cents must be greater than zero"
+          },
+          "instance": {
+            "type": "string",
+            "description": "URI reference identifying specific occurrence of the problem",
+            "example": "/api/v1/commands/orders/issue-credit"
+          },
+          "code": {
+            "type": "string",
+            "description": "Application-specific machine-readable error code",
+            "example": "INVALID_ARGUMENT"
+          },
+          "invalid_params": {
+            "type": "array",
+            "description": "Detailed parameter validation failures",
+            "items": {
+              "$ref": "#/components/schemas/InvalidParam"
+            }
+          }
+        },
+        "required": ["title", "status"]
+      },
+      "CommandAcceptedResponse": {
+        "type": "object",
+        "description": "Standard response for asynchronous command acceptance",
+        "properties": {
+          "command_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Monotonically ordered UUIDv7 identifying the dispatched command",
+            "example": "0193108c-9824-7da9-8f0a-15603d772274"
+          },
+          "status": {
+            "type": "string",
+            "description": "Command intake status",
+            "example": "accepted"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RFC 3339 UTC timestamp when command was ingested",
+            "example": "2026-11-09T08:30:00Z"
+          }
+        },
+        "required": ["command_id", "status", "timestamp"]
+      },
+      "IssueCreditRequest": {
+        "type": "object",
+        "description": "Payload for issuing a courtesy credit concession on an order",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Target order identifier",
+            "example": "ord-98234-x"
+          },
+          "amount_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Credit amount in cents (must be > 0)",
+            "minimum": 1,
+            "example": 2500
+          },
+          "reason": {
+            "type": "string",
+            "description": "Concession justification or customer dispute reason",
+            "minLength": 3,
+            "maxLength": 500,
+            "example": "Late delivery concession approved by agent"
+          }
+        },
+        "required": ["order_id", "amount_cents", "reason"]
+      },
+      "CancelOrderRequest": {
+        "type": "object",
+        "description": "Payload for canceling an existing order",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Target order identifier",
+            "example": "ord-98234-x"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Order cancellation justification",
+            "minLength": 3,
+            "maxLength": 500,
+            "example": "Customer requested cancellation prior to fulfillment"
+          }
+        },
+        "required": ["order_id", "reason"]
+      },
+      "OrderItem": {
+        "type": "object",
+        "description": "Individual line item within an order",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Line item unique identifier",
+            "example": "item-001"
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Product SKU or identifier",
+            "example": "prod-4412"
+          },
+          "price_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Price in cents per unit",
+            "example": 1999
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "Quantity ordered",
+            "minimum": 1,
+            "example": 2
+          }
+        },
+        "required": ["item_id", "product_id", "price_cents", "quantity"]
+      },
+      "OrderDetails": {
+        "type": "object",
+        "description": "Detailed order state queried from lakehouse",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Unique order identifier",
+            "example": "ord-98234-x"
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Customer identifier",
+            "example": "cust-1029"
+          },
+          "status": {
+            "type": "string",
+            "description": "Current order lifecycle status",
+            "example": "processing"
+          },
+          "total_amount_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total order amount in cents",
+            "example": 3998
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency ISO code",
+            "example": "USD"
+          },
+          "items": {
+            "type": "array",
+            "description": "List of items in order",
+            "items": {
+              "$ref": "#/components/schemas/OrderItem"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RFC 3339 creation timestamp"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RFC 3339 last update timestamp"
+          }
+        },
+        "required": [
+          "order_id",
+          "customer_id",
+          "status",
+          "total_amount_cents",
+          "currency",
+          "items",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "OrderSummary": {
+        "type": "object",
+        "description": "Summary order record for lakehouse list queries",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Unique order identifier",
+            "example": "ord-98234-x"
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Customer identifier",
+            "example": "cust-1029"
+          },
+          "status": {
+            "type": "string",
+            "description": "Current order lifecycle status",
+            "example": "delivered"
+          },
+          "total_amount_cents": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total order amount in cents",
+            "example": 5420
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency ISO code",
+            "example": "USD"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RFC 3339 creation timestamp"
+          }
+        },
+        "required": [
+          "order_id",
+          "customer_id",
+          "status",
+          "total_amount_cents",
+          "currency",
+          "created_at"
+        ]
+      },
+      "OrderListResponse": {
+        "type": "object",
+        "description": "Paginated list of orders from lakehouse query",
+        "properties": {
+          "orders": {
+            "type": "array",
+            "description": "Page of order records",
+            "items": {
+              "$ref": "#/components/schemas/OrderSummary"
+            }
+          },
+          "total_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total matching records in lakehouse dataset",
+            "example": 1450
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Page limit requested",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Page offset requested",
+            "example": 0
+          }
+        },
+        "required": ["orders", "total_count", "limit", "offset"]
+      },
+      "DomainEventStreamItem": {
+        "type": "object",
+        "description": "Domain event notification broadcast over SSE",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Unique event UUIDv7",
+            "example": "0193108c-9824-7da9-8f0a-15603d772274"
+          },
+          "event_type": {
+            "type": "string",
+            "description": "Event discriminator name",
+            "example": "CourtesyCreditIssued"
+          },
+          "aggregate_id": {
+            "type": "string",
+            "description": "Associated order or entity ID",
+            "example": "ord-98234-x"
+          },
+          "payload": {
+            "description": "Arbitrary JSON event payload"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RFC 3339 timestamp"
+          }
+        },
+        "required": ["event_id", "event_type", "aggregate_id", "payload", "timestamp"]
+      },
+      "BenchmarkTelemetryItem": {
+        "type": "object",
+        "description": "Real-time agent benchmark telemetry measurement",
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "description": "Benchmark execution run ID",
+            "example": "bench-run-842"
+          },
+          "step": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Execution step index",
+            "example": 42
+          },
+          "ttft_micros": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Time to first token in microseconds",
+            "example": 12450
+          },
+          "itl_micros": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Inter-token latency in microseconds",
+            "example": 3200
+          },
+          "token_delta": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Token count increment",
+            "example": 5
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RFC 3339 timestamp"
+          }
+        },
+        "required": ["run_id", "step", "ttft_micros", "itl_micros", "token_delta", "timestamp"]
+      },
+      "PipelineTelemetryItem": {
+        "type": "object",
+        "description": "Streaming pipeline health and lag telemetry",
+        "properties": {
+          "iggy_commit_lag": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Iggy broker commit log lag count",
+            "example": 12
+          },
+          "arroyo_watermark_lag_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Arroyo streaming watermark lag in milliseconds",
+            "example": 145
+          },
+          "delta_commit_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Delta Lake 2PC commit sequence count",
+            "example": 8920
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RFC 3339 timestamp"
+          }
+        },
+        "required": ["iggy_commit_lag", "arroyo_watermark_lag_ms", "delta_commit_count", "timestamp"]
+      }
+    }
+  }
+}
