@@ -19,6 +19,7 @@ ferrous-cqrses = { path = "../ferrous-cqrses" }
 axum = { version = "0.7", features = ["macros"] }
 tokio = { version = "1.40", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
+tokio-util = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tower = { version = "0.5", features = ["util"] }

@@ -8,6 +8,7 @@ pub mod generated;
 pub mod handlers;
 pub mod lakehouse;
 pub mod publisher;
+pub mod sse;
 pub mod state;
 
 pub use auth::{AuthError, JwtValidator, RequireScope, SCOPE_API_READ, SCOPE_API_WRITE};
@@ -23,6 +24,11 @@ pub use publisher::{
     IggyPublisher, InMemoryIggyPublisher, PublishedMessage, PublisherError, TcpIggyPublisher,
     ORDERS_INTAKE_TOPIC,
 };
+pub use sse::{
+    AgentTaskHandle, EventStreamBroadcaster, EventStreamFilter, SseAbortGuard,
+    DEFAULT_IDLE_DRAIN_WINDOW, DEFAULT_KEEP_ALIVE_INTERVAL, DEFAULT_SSE_CHANNEL_CAPACITY,
+    DOMAIN_EVENT_SSE_NAME, GLOBAL_STREAM_SCOPE,
+};
 pub use state::AppState;
 
 use std::sync::Arc;
@@ -35,11 +41,12 @@ pub fn create_default_router() -> Router {
 }
 
 /// Creates Axum router wired to a shared [`AppState`] with Kanidm Tower PEP middleware
-/// mounted on `/api/v1/commands` routes and `Arc<SessionContext>` wired into `QueriesHandler`.
+/// mounted on `/api/v1/commands` routes, `Arc<SessionContext>` wired into `QueriesHandler`,
+/// and `Arc<EventStreamBroadcaster>` wired into `StreamsHandler` and `OrdersHandler`.
 pub fn create_router_with_app_state(app_state: AppState) -> Router {
     let orders = Arc::new(OrdersHandler::with_state(app_state.clone()));
     let queries = Arc::new(QueriesHandler::with_state(app_state.clone()));
-    let streams = Arc::new(StreamsHandler::new());
+    let streams = Arc::new(StreamsHandler::with_state(app_state.clone()));
 
     let api_state = ApiState::new(orders, queries, streams);
     build_api_router(api_state)

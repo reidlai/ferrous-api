@@ -1,27 +1,57 @@
-//! Real-time SSE streaming handlers implementing StreamsApi trait.
+//! Real-time SSE streaming handlers implementing `StreamsApi` trait.
 
 use std::convert::Infallible;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use chrono::Utc;
-use ferrous_cqrses::id::generate_uuidv7;
 use futures::stream;
 use tracing::info;
 
 use crate::generated::{
-    ApiError, BenchmarkStreamResponse, BenchmarkTelemetryItem, Claims, DomainEventStreamItem,
-    EventStreamParams, EventStreamResponse, InvalidParam, PipelineTelemetryItem,
-    PipelineTelemetryStreamResponse, ProblemDetails, StreamsApi,
+    ApiError, BenchmarkStreamResponse, BenchmarkTelemetryItem, Claims, EventStreamParams,
+    EventStreamResponse, InvalidParam, PipelineTelemetryItem, PipelineTelemetryStreamResponse,
+    ProblemDetails, StreamsApi,
 };
+use crate::sse::EventStreamBroadcaster;
+use crate::state::AppState;
 
-/// Pure-Rust implementation of StreamsApi server trait.
-#[derive(Debug, Default, Clone)]
-pub struct StreamsHandler;
+/// Pure-Rust implementation of `StreamsApi` server trait wired to [`EventStreamBroadcaster`].
+#[derive(Debug, Clone)]
+pub struct StreamsHandler {
+    event_broadcaster: Arc<EventStreamBroadcaster>,
+}
+
+impl Default for StreamsHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl StreamsHandler {
+    /// Creates a new `StreamsHandler` backed by a default [`EventStreamBroadcaster`].
     pub fn new() -> Self {
-        Self
+        Self {
+            event_broadcaster: Arc::new(EventStreamBroadcaster::new()),
+        }
+    }
+
+    /// Creates a `StreamsHandler` wired to the shared [`AppState`]'s `Arc<EventStreamBroadcaster>`.
+    pub fn with_state(state: AppState) -> Self {
+        Self {
+            event_broadcaster: state.event_broadcaster,
+        }
+    }
+
+    /// Creates a `StreamsHandler` wired to an explicit `Arc<EventStreamBroadcaster>`.
+    pub fn with_broadcaster(event_broadcaster: Arc<EventStreamBroadcaster>) -> Self {
+        Self { event_broadcaster }
+    }
+
+    /// Returns a reference to the underlying `Arc<EventStreamBroadcaster>`.
+    pub fn event_broadcaster(&self) -> &Arc<EventStreamBroadcaster> {
+        &self.event_broadcaster
     }
 }
 
@@ -39,25 +69,7 @@ impl StreamsApi for StreamsHandler {
             "Client connected to domain event stream"
         );
 
-        let initial_event = DomainEventStreamItem {
-            event_id: generate_uuidv7(),
-            event_type: "StreamConnected".to_string(),
-            aggregate_id: params
-                .order_id
-                .clone()
-                .unwrap_or_else(|| "global".to_string()),
-            payload: serde_json::json!({ "status": "active" }),
-            timestamp: Utc::now(),
-        };
-
-        let data = serde_json::to_string(&initial_event).unwrap_or_default();
-        let s = stream::once(async move {
-            Ok::<_, Infallible>(Event::default().event("domain_event").data(data))
-        });
-
-        let sse = Sse::new(Box::pin(s) as crate::generated::BoxedSseStream)
-            .keep_alive(KeepAlive::default());
-
+        let sse = self.event_broadcaster.subscribe_sse(&params)?;
         Ok(EventStreamResponse(sse))
     }
 
