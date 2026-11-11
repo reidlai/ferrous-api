@@ -5,12 +5,22 @@ use axum::{
     http::{header, Request, StatusCode},
 };
 use ferrous_api::{
+    auth::JwtValidator,
     create_default_router,
-    generated::models::{CommandAcceptedResponse, OrderDetails, OrderListResponse, ProblemDetails},
+    generated::models::{
+        Claims, CommandAcceptedResponse, OrderDetails, OrderListResponse, ProblemDetails,
+    },
 };
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 use uuid::Uuid;
+
+fn valid_write_auth_header() -> String {
+    let validator = JwtValidator::default();
+    let claims = Claims::new("svc_ferrous_api").with_scope("api:write");
+    let token = validator.issue_token(&claims).unwrap();
+    format!("Bearer {token}")
+}
 
 #[tokio::test]
 async fn test_issue_credit_valid_payload_returns_202() {
@@ -27,6 +37,7 @@ async fn test_issue_credit_valid_payload_returns_202() {
         .method("POST")
         .uri("/api/v1/commands/orders/issue-credit")
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, valid_write_auth_header())
         .body(Body::from(request_body.to_string()))
         .unwrap();
 
@@ -59,6 +70,7 @@ async fn test_issue_credit_non_uuid_order_id_returns_422() {
         .method("POST")
         .uri("/api/v1/commands/orders/issue-credit")
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, valid_write_auth_header())
         .body(Body::from(invalid_body.to_string()))
         .unwrap();
 
@@ -94,6 +106,7 @@ async fn test_issue_credit_missing_required_field_returns_400_rfc7807() {
         .method("POST")
         .uri("/api/v1/commands/orders/issue-credit")
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, valid_write_auth_header())
         .body(Body::from(malformed_body.to_string()))
         .unwrap();
 
@@ -130,6 +143,7 @@ async fn test_issue_credit_negative_or_zero_amount_returns_422_rfc7807() {
         .method("POST")
         .uri("/api/v1/commands/orders/issue-credit")
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, valid_write_auth_header())
         .body(Body::from(invalid_body.to_string()))
         .unwrap();
 
@@ -167,6 +181,7 @@ async fn test_cancel_order_valid_payload_returns_202() {
         .method("POST")
         .uri("/api/v1/commands/orders/cancel")
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, valid_write_auth_header())
         .body(Body::from(request_body.to_string()))
         .unwrap();
 
@@ -196,6 +211,7 @@ async fn test_cancel_order_blank_fields_returns_422() {
         .method("POST")
         .uri("/api/v1/commands/orders/cancel")
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, valid_write_auth_header())
         .body(Body::from(empty_body.to_string()))
         .unwrap();
 
@@ -230,6 +246,7 @@ async fn test_cancel_order_non_uuid_order_id_returns_422() {
         .method("POST")
         .uri("/api/v1/commands/orders/cancel")
         .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, valid_write_auth_header())
         .body(Body::from(invalid_body.to_string()))
         .unwrap();
 

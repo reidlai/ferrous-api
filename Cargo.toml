@@ -30,6 +30,7 @@ async-trait = "0.1"
 futures = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+jsonwebtoken = { version = "11.1.0", features = ["rust_crypto"] }
 
 [dev-dependencies]
 http-body-util = "0.1"

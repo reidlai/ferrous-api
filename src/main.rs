@@ -1,7 +1,12 @@
 //! Standalone HTTP server entrypoint for ferrous-api service.
 
 use std::net::SocketAddr;
-use ferrous_api::create_default_router;
+use std::sync::Arc;
+
+use ferrous_api::{
+    create_router_with_app_state, AppState, IggyPublisher, InMemoryIggyPublisher, JwtValidator,
+    TcpIggyPublisher,
+};
 use tokio::signal;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -23,8 +28,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|p| p.parse().ok())
         .unwrap_or(8080);
 
+    let publisher: Arc<dyn IggyPublisher> = match std::env::var("IGGY_SERVER_ADDRESS") {
+        Ok(addr) if !addr.trim().is_empty() => {
+            let trimmed = addr.trim().to_string();
+            info!(addr = %trimmed, "Configuring live TCP Apache Iggy WAL publisher");
+            Arc::new(TcpIggyPublisher::new(trimmed))
+        }
+        _ => {
+            info!("Configuring in-memory Apache Iggy WAL publisher");
+            Arc::new(InMemoryIggyPublisher::new())
+        }
+    };
+
+    let mut validator = match std::env::var("KANIDM_JWT_SECRET") {
+        Ok(secret) if !secret.trim().is_empty() => JwtValidator::new_with_secret(
+            ferrous_api::auth::DEFAULT_KANIDM_KID,
+            secret.trim().as_bytes(),
+        ),
+        _ => JwtValidator::default(),
+    };
+    if let Ok(issuer) = std::env::var("KANIDM_ISSUER") {
+        if !issuer.trim().is_empty() {
+            validator = validator.with_issuer(issuer.trim());
+        }
+    }
+    let jwt_validator = Arc::new(validator);
+    let app_state = AppState::new(publisher, jwt_validator);
+
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    let app = create_default_router();
+    let app = create_router_with_app_state(app_state);
 
     info!(%addr, "Bootstrapping FerrousCX Axum API Service");
 
