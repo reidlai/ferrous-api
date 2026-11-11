@@ -1,14 +1,15 @@
 //! Standalone HTTP server entrypoint for ferrous-api service.
 
 use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::Arc;
 
 use ferrous_api::{
     create_router_with_app_state, AppState, IggyPublisher, InMemoryIggyPublisher, JwtValidator,
-    TcpIggyPublisher,
+    SessionContext, TcpIggyPublisher, DEFAULT_DELTA_ORDERS_PATH, ORDERS_CURRENT_STATE_TABLE,
 };
 use tokio::signal;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -53,7 +54,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let jwt_validator = Arc::new(validator);
-    let app_state = AppState::new(publisher, jwt_validator);
+
+    let session_context = Arc::new(SessionContext::default());
+    let delta_path = std::env::var("DELTA_ORDERS_PATH")
+        .or_else(|_| std::env::var("DELTA_DATA_DIR").map(|d| format!("{d}/orders_current_state")))
+        .unwrap_or_else(|_| DEFAULT_DELTA_ORDERS_PATH.to_string());
+
+    if Path::new(&delta_path).join("_delta_log").exists() {
+        match session_context.register_delta_table(ORDERS_CURRENT_STATE_TABLE, &delta_path) {
+            Ok(meta) => {
+                info!(
+                    path = %delta_path,
+                    version = meta.version,
+                    files = meta.active_files.len(),
+                    "Registered Delta Lake table in embedded DataFusion SessionContext"
+                );
+            }
+            Err(err) => {
+                warn!(
+                    path = %delta_path,
+                    error = %err,
+                    "Failed to load Delta Lake directory; retaining seeded SessionContext table"
+                );
+            }
+        }
+    } else {
+        info!(
+            table = ORDERS_CURRENT_STATE_TABLE,
+            "Initialized embedded DataFusion SessionContext with in-memory columnar table"
+        );
+    }
+
+    let app_state = AppState::with_session_context(publisher, jwt_validator, session_context);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let app = create_router_with_app_state(app_state);

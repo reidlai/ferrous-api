@@ -6,12 +6,19 @@
 pub mod auth;
 pub mod generated;
 pub mod handlers;
+pub mod lakehouse;
 pub mod publisher;
 pub mod state;
 
 pub use auth::{AuthError, JwtValidator, RequireScope, SCOPE_API_READ, SCOPE_API_WRITE};
 pub use generated::*;
 pub use handlers::*;
+pub use lakehouse::{
+    write_delta_table_snapshot, DeltaLogMetadata, DeltaTableProvider, FederatedOrderDisputeRow,
+    LakehouseError, OperationalDisputeRecord, OperationalTableProvider, OrderRecord,
+    SessionContext, SqlQueryResult, StatusAggregation, TableProvider, DEFAULT_DELTA_ORDERS_PATH,
+    OPERATIONAL_DISPUTES_TABLE, ORDERS_CURRENT_STATE_TABLE,
+};
 pub use publisher::{
     IggyPublisher, InMemoryIggyPublisher, PublishedMessage, PublisherError, TcpIggyPublisher,
     ORDERS_INTAKE_TOPIC,
@@ -28,10 +35,10 @@ pub fn create_default_router() -> Router {
 }
 
 /// Creates Axum router wired to a shared [`AppState`] with Kanidm Tower PEP middleware
-/// mounted on `/api/v1/commands` routes.
+/// mounted on `/api/v1/commands` routes and `Arc<SessionContext>` wired into `QueriesHandler`.
 pub fn create_router_with_app_state(app_state: AppState) -> Router {
     let orders = Arc::new(OrdersHandler::with_state(app_state.clone()));
-    let queries = Arc::new(QueriesHandler::new());
+    let queries = Arc::new(QueriesHandler::with_state(app_state.clone()));
     let streams = Arc::new(StreamsHandler::new());
 
     let api_state = ApiState::new(orders, queries, streams);
