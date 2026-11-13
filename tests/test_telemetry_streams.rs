@@ -123,7 +123,9 @@ async fn test_real_time_benchmark_telemetry_stream_and_run_id_filtering() {
     let mut body = response.into_body();
     let mut collected = Vec::new();
     while collected.len() < 3 {
-        let chunk = next_sse_chunk(&mut body).await.expect("Expected benchmark SSE chunk");
+        let chunk = next_sse_chunk(&mut body)
+            .await
+            .expect("Expected benchmark SSE chunk");
         assert!(
             chunk.contains("event: benchmark_telemetry"),
             "Expected event: benchmark_telemetry header: {chunk}"
@@ -240,7 +242,11 @@ async fn test_multi_source_pipeline_telemetry_collection_from_iggy_arroyo_and_de
     fs::create_dir_all(&delta_log_dir).unwrap();
     for version in 0..3 {
         let commit_path = delta_log_dir.join(format!("{version:020}.json"));
-        fs::write(&commit_path, "{\"commitInfo\":{\"timestamp\":1700000000}}\n").unwrap();
+        fs::write(
+            &commit_path,
+            "{\"commitInfo\":{\"timestamp\":1700000000}}\n",
+        )
+        .unwrap();
     }
 
     let (state, _publisher, _validator) = AppState::with_in_memory();
@@ -557,5 +563,3 @@ async fn test_pipeline_telemetry_rejects_https_and_non_200_probe_urls() {
     assert_eq!(snapshot.arroyo_status.as_deref(), Some("unavailable"));
     assert_eq!(snapshot.delta_status.as_deref(), Some("unavailable"));
 }
-
-

@@ -274,11 +274,7 @@ impl Drop for SseAbortGuard {
                 .keys()
                 .cloned()
                 .collect();
-            let mut scopes = self
-                .inner
-                .scopes
-                .write()
-                .unwrap_or_else(|e| e.into_inner());
+            let mut scopes = self.inner.scopes.write().unwrap_or_else(|e| e.into_inner());
             for token in scopes.values() {
                 token.cancel();
             }
@@ -453,11 +449,7 @@ impl EventStreamBroadcaster {
     }
 
     fn get_or_create_scope_token(&self, scope_id: &str) -> CancellationToken {
-        let mut scopes = self
-            .inner
-            .scopes
-            .write()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut scopes = self.inner.scopes.write().unwrap_or_else(|e| e.into_inner());
 
         if let Some(existing) = scopes.get(scope_id) {
             if !existing.is_cancelled() {
@@ -541,11 +533,7 @@ impl EventStreamBroadcaster {
             .cloned()
             .collect();
 
-        let mut scopes = self
-            .inner
-            .scopes
-            .write()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut scopes = self.inner.scopes.write().unwrap_or_else(|e| e.into_inner());
         for token in scopes.values() {
             token.cancel();
         }
@@ -554,11 +542,7 @@ impl EventStreamBroadcaster {
 
     /// Returns `true` if the token for `scope_id` exists and has been cancelled.
     pub fn is_scope_cancelled(&self, scope_id: &str) -> bool {
-        let scopes = self
-            .inner
-            .scopes
-            .read()
-            .unwrap_or_else(|e| e.into_inner());
+        let scopes = self.inner.scopes.read().unwrap_or_else(|e| e.into_inner());
         scopes
             .get(scope_id)
             .map(CancellationToken::is_cancelled)
@@ -775,7 +759,10 @@ impl EventStreamBroadcaster {
     /// Validates [`EventStreamParams`], subscribes to the broadcast ring buffer, attaches
     /// an [`SseAbortGuard`] linked to the scope's [`CancellationToken`], and returns a
     /// native Axum [`Sse<BoxedSseStream>`] configured with [`KeepAlive`].
-    pub fn subscribe_sse(&self, params: &EventStreamParams) -> Result<Sse<BoxedSseStream>, ApiError> {
+    pub fn subscribe_sse(
+        &self,
+        params: &EventStreamParams,
+    ) -> Result<Sse<BoxedSseStream>, ApiError> {
         let filter = EventStreamFilter::from_params(params).map_err(ApiError::BadRequest)?;
         let scope_id = filter.scope_id().to_string();
 
@@ -931,9 +918,9 @@ impl EventStreamBroadcaster {
                         }
                     }
                 } else {
-                    let deadline = *state
-                        .idle_deadline
-                        .get_or_insert_with(|| tokio::time::Instant::now() + DEFAULT_IDLE_DRAIN_WINDOW);
+                    let deadline = *state.idle_deadline.get_or_insert_with(|| {
+                        tokio::time::Instant::now() + DEFAULT_IDLE_DRAIN_WINDOW
+                    });
 
                     tokio::select! {
                         biased;

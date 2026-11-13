@@ -169,10 +169,7 @@ fn test_problem_details_rfc7807_roundtrip() {
     assert_eq!(deserialized.r#type, "urn:ferrouscx:error:validation");
     assert_eq!(deserialized.status, 422);
     assert_eq!(deserialized.invalid_params.as_ref().unwrap().len(), 1);
-    assert_eq!(
-        deserialized.invalid_params.unwrap()[0].name,
-        "amount_cents"
-    );
+    assert_eq!(deserialized.invalid_params.unwrap()[0].name, "amount_cents");
 }
 
 #[test]
@@ -195,7 +192,11 @@ fn test_command_payload_validation() {
     };
     let uuid_err = invalid_uuid_req.validate().unwrap_err();
     assert_eq!(uuid_err.status, 422);
-    assert!(uuid_err.invalid_params.unwrap().iter().any(|p| p.name == "order_id"));
+    assert!(uuid_err
+        .invalid_params
+        .unwrap()
+        .iter()
+        .any(|p| p.name == "order_id"));
 
     // Negative amount_cents
     let neg_req = IssueCreditRequest {

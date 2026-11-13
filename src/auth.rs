@@ -466,11 +466,9 @@ impl JwtValidator {
             ));
         }
 
-        let (scheme, rest) = raw_header
-            .split_once(char::is_whitespace)
-            .ok_or_else(|| {
-                AuthError::MalformedHeader("Expected 'Bearer <token>' scheme".to_string())
-            })?;
+        let (scheme, rest) = raw_header.split_once(char::is_whitespace).ok_or_else(|| {
+            AuthError::MalformedHeader("Expected 'Bearer <token>' scheme".to_string())
+        })?;
 
         if !scheme.eq_ignore_ascii_case("bearer") {
             return Err(AuthError::MalformedHeader(

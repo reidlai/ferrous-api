@@ -311,10 +311,7 @@ async fn test_broker_publish_failure_returns_500_problem_details() {
     let cancel_response = app_cancel.oneshot(cancel_req).await.unwrap();
     assert_eq!(cancel_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
-        cancel_response
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .unwrap(),
+        cancel_response.headers().get(header::CONTENT_TYPE).unwrap(),
         "application/problem+json"
     );
 
@@ -326,7 +323,10 @@ async fn test_broker_publish_failure_returns_500_problem_details() {
         .to_bytes();
     let cancel_problem: ProblemDetails = serde_json::from_slice(&cancel_bytes).unwrap();
     assert_eq!(cancel_problem.status, 500);
-    assert_eq!(cancel_problem.r#type, "urn:ferrous:error:broker-unavailable");
+    assert_eq!(
+        cancel_problem.r#type,
+        "urn:ferrous:error:broker-unavailable"
+    );
 }
 
 #[tokio::test]

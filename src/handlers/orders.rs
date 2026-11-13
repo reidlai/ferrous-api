@@ -6,9 +6,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::Utc;
-use ferrous_cqrses::commands::{
-    CancelOrderCommand, IssueCourtesyCreditCommand, OrderCommand,
-};
+use ferrous_cqrses::commands::{CancelOrderCommand, IssueCourtesyCreditCommand, OrderCommand};
 use serde_json::json;
 use tracing::info;
 
@@ -108,18 +106,17 @@ impl OrdersApi for OrdersHandler {
         let trimmed_order_id = payload.order_id.trim();
         let trimmed_reason = payload.reason.trim();
 
-        let credit_cmd = IssueCourtesyCreditCommand::new(
-            trimmed_order_id,
-            payload.amount_cents,
-            trimmed_reason,
-        );
+        let credit_cmd =
+            IssueCourtesyCreditCommand::new(trimmed_order_id, payload.amount_cents, trimmed_reason);
         let command_id = credit_cmd.command_id;
         let order_cmd = OrderCommand::IssueCourtesyCredit(credit_cmd);
 
         self.publisher
             .publish_command(&order_cmd)
             .await
-            .map_err(|e| ApiError::internal_error(e.into_problem_details(Some(INSTANCE.to_string()))))?;
+            .map_err(|e| {
+                ApiError::internal_error(e.into_problem_details(Some(INSTANCE.to_string())))
+            })?;
 
         let _ = self.event_broadcaster.publish(DomainEventStreamItem {
             event_id: command_id,
@@ -166,7 +163,9 @@ impl OrdersApi for OrdersHandler {
         self.publisher
             .publish_command(&order_cmd)
             .await
-            .map_err(|e| ApiError::internal_error(e.into_problem_details(Some(INSTANCE.to_string()))))?;
+            .map_err(|e| {
+                ApiError::internal_error(e.into_problem_details(Some(INSTANCE.to_string())))
+            })?;
 
         let _ = self.event_broadcaster.publish(DomainEventStreamItem {
             event_id: command_id,

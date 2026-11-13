@@ -134,7 +134,10 @@ async fn test_order_lookup_not_found_and_error_mappings_return_rfc7807() {
         limit: Some(0),
         offset: Some(0),
     });
-    assert!(matches!(invalid_direct, Err(LakehouseError::InvalidQuery(_))));
+    assert!(matches!(
+        invalid_direct,
+        Err(LakehouseError::InvalidQuery(_))
+    ));
 }
 
 #[tokio::test]
@@ -318,10 +321,8 @@ fn test_federated_join_execution_plan_between_delta_and_operational_tables() {
     let ctx = SessionContext::new_with_generated_orders(100_000);
 
     // Verify federated join fails cleanly with TableNotFound before operational table registration
-    let missing_join = ctx.execute_federated_join(
-        ORDERS_CURRENT_STATE_TABLE,
-        OPERATIONAL_DISPUTES_TABLE,
-    );
+    let missing_join =
+        ctx.execute_federated_join(ORDERS_CURRENT_STATE_TABLE, OPERATIONAL_DISPUTES_TABLE);
     assert_eq!(
         missing_join,
         Err(LakehouseError::TableNotFound(
@@ -533,7 +534,10 @@ fn test_delta_log_directory_registration_tombstones_and_deduplication() {
         ],
     );
     assert_eq!(dedup.order_ids.len(), 1);
-    assert_eq!(dedup.get_order_by_id("ord-dup-1").unwrap().status, "delivered");
+    assert_eq!(
+        dedup.get_order_by_id("ord-dup-1").unwrap().status,
+        "delivered"
+    );
     let groups = dedup.aggregate_by_status();
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].status, "delivered");

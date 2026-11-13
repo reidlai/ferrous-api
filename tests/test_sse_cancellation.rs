@@ -121,10 +121,7 @@ async fn test_live_domain_event_and_llm_token_streaming_over_sse() {
     );
     assert_eq!(collected_events[3].payload["token"], "Approving ");
     assert_eq!(collected_events[4].payload["token"], "$15.00 credit");
-    assert_eq!(
-        collected_events[5].payload["action"],
-        "IssueCourtesyCredit"
-    );
+    assert_eq!(collected_events[5].payload["action"], "IssueCourtesyCredit");
 }
 
 #[tokio::test]
@@ -172,7 +169,11 @@ async fn test_filtered_sse_subscription_by_order_id_and_event_types() {
     let body_str = String::from_utf8_lossy(&body_bytes);
     let events = parse_sse_domain_events(&body_str);
 
-    assert_eq!(events.len(), 3, "Expected StreamConnected + 2 matching events, got: {events:?}");
+    assert_eq!(
+        events.len(),
+        3,
+        "Expected StreamConnected + 2 matching events, got: {events:?}"
+    );
     assert_eq!(events[0].event_type, "StreamConnected");
     assert_eq!(events[0].aggregate_id, "ord-100");
 
@@ -217,16 +218,14 @@ async fn test_blank_order_id_or_event_types_returns_400_rfc7807_problem_details(
         let problem: ProblemDetails = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(problem.status, 400);
         assert_eq!(problem.title, "Bad Request");
-        assert_eq!(
-            problem.instance.as_deref(),
-            Some("/api/v1/events/stream")
-        );
+        assert_eq!(problem.instance.as_deref(), Some("/api/v1/events/stream"));
         assert!(problem.invalid_params.is_some());
     }
 }
 
 #[tokio::test]
-async fn test_multi_subscriber_isolation_and_global_disconnect_aborts_order_scoped_task_under_50ms() {
+async fn test_multi_subscriber_isolation_and_global_disconnect_aborts_order_scoped_task_under_50ms()
+{
     let (state, _publisher, _validator, broadcaster) = AppState::with_in_memory_live();
     let app = create_router_with_app_state(state);
 
@@ -327,8 +326,8 @@ async fn test_client_disconnect_preempts_and_aborts_agent_task_under_50ms() {
     let mut body = response.into_body();
 
     // Spawn a continuous agent task linked to the same order scope
-    let agent_handle = broadcaster
-        .spawn_continuous_agent_stream("ord-abort-disconnect", Duration::from_millis(5));
+    let agent_handle =
+        broadcaster.spawn_continuous_agent_stream("ord-abort-disconnect", Duration::from_millis(5));
     assert!(!agent_handle.is_cancelled());
     assert!(!agent_handle.is_terminated());
 
@@ -469,10 +468,9 @@ async fn test_orders_command_handlers_broadcast_credit_issued_and_order_cancelle
         .unwrap();
     let credit_res = app.clone().oneshot(credit_req).await.unwrap();
     assert_eq!(credit_res.status(), StatusCode::ACCEPTED);
-    let credit_accepted: CommandAcceptedResponse = serde_json::from_slice(
-        &credit_res.into_body().collect().await.unwrap().to_bytes(),
-    )
-    .unwrap();
+    let credit_accepted: CommandAcceptedResponse =
+        serde_json::from_slice(&credit_res.into_body().collect().await.unwrap().to_bytes())
+            .unwrap();
 
     // 3. Dispatch CancelOrder command for `order_id`
     let cancel_req = Request::builder()
@@ -490,10 +488,9 @@ async fn test_orders_command_handlers_broadcast_credit_issued_and_order_cancelle
         .unwrap();
     let cancel_res = app.oneshot(cancel_req).await.unwrap();
     assert_eq!(cancel_res.status(), StatusCode::ACCEPTED);
-    let cancel_accepted: CommandAcceptedResponse = serde_json::from_slice(
-        &cancel_res.into_body().collect().await.unwrap().to_bytes(),
-    )
-    .unwrap();
+    let cancel_accepted: CommandAcceptedResponse =
+        serde_json::from_slice(&cancel_res.into_body().collect().await.unwrap().to_bytes())
+            .unwrap();
 
     // Verify both commands were committed to Iggy WAL
     assert_eq!(publisher.messages().len(), 2);

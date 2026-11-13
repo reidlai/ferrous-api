@@ -131,9 +131,7 @@ where
             ))
         })?;
 
-        value
-            .validate()
-            .map_err(ApiError::UnprocessableEntity)?;
+        value.validate().map_err(ApiError::UnprocessableEntity)?;
 
         Ok(ValidatedJson(value))
     }
@@ -419,7 +417,10 @@ pub fn build_api_router(state: ApiState) -> Router {
             get(handle_pipeline_telemetry_stream),
         )
         .route("/healthz", get(|| async { (StatusCode::OK, "healthy\n") }))
-        .route("/health/ready", get(|| async { (StatusCode::OK, "ready\n") }))
+        .route(
+            "/health/ready",
+            get(|| async { (StatusCode::OK, "ready\n") }),
+        )
         .fallback(handle_fallback)
         .with_state(state)
 }

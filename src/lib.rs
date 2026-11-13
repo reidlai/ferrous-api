@@ -39,8 +39,8 @@ pub use telemetry::{
     SOURCE_STATUS_AVAILABLE, SOURCE_STATUS_UNAVAILABLE,
 };
 
-use std::sync::Arc;
 use axum::Router;
+use std::sync::Arc;
 
 /// Creates default Axum router configured with standard pure-Rust trait handlers,
 /// `AppState`, and Kanidm Tower PEP middleware on command routes.

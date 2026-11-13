@@ -303,7 +303,12 @@ async fn test_jwks_in_memory_cache_lookup_latency_and_ttl_refresh() {
     let claims = Claims::new("svc_ferrous_api").with_scope(SCOPE_API_WRITE);
     let encoding_key = EncodingKey::from_secret(custom_secret);
     let token = validator
-        .issue_token_with_kid("kanidm-rotated-key", &claims, &encoding_key, Algorithm::HS256)
+        .issue_token_with_kid(
+            "kanidm-rotated-key",
+            &claims,
+            &encoding_key,
+            Algorithm::HS256,
+        )
         .unwrap();
 
     // Warm up and verify validation latency < 0.2ms (200 microseconds)

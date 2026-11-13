@@ -109,7 +109,10 @@ impl StreamsApi for StreamsHandler {
         claims: Option<Claims>,
     ) -> Result<PipelineTelemetryStreamResponse, ApiError> {
         info!(
-            user = claims.as_ref().map(|c| c.sub.as_str()).unwrap_or("anonymous"),
+            user = claims
+                .as_ref()
+                .map(|c| c.sub.as_str())
+                .unwrap_or("anonymous"),
             "Client connected to pipeline telemetry stream"
         );
 

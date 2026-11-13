@@ -537,7 +537,13 @@ impl DeltaTableProvider {
     /// Generates a deterministic columnar dataset of `count` rows (e.g., 100,000 records)
     /// directly into contiguous column vectors for high-speed benchmarking and SLA verification.
     pub fn with_generated_records(count: usize) -> Self {
-        let statuses_cycle = ["delivered", "processing", "shipped", "cancelled", "disputed"];
+        let statuses_cycle = [
+            "delivered",
+            "processing",
+            "shipped",
+            "cancelled",
+            "disputed",
+        ];
         let status_dictionary: Vec<String> =
             statuses_cycle.iter().map(|s| (*s).to_string()).collect();
 
@@ -677,8 +683,9 @@ impl DeltaTableProvider {
                 if trimmed.is_empty() {
                     continue;
                 }
-                let val: serde_json::Value = serde_json::from_str(trimmed)
-                    .map_err(|e| LakehouseError::StorageIo(format!("Invalid Delta log JSON: {e}")))?;
+                let val: serde_json::Value = serde_json::from_str(trimmed).map_err(|e| {
+                    LakehouseError::StorageIo(format!("Invalid Delta log JSON: {e}"))
+                })?;
 
                 if let Some(protocol) = val.get("protocol") {
                     if let Some(r) = protocol.get("minReaderVersion").and_then(|v| v.as_u64()) {
@@ -806,11 +813,7 @@ impl DeltaTableProvider {
             currency: self.currencies[row_idx].clone(),
             created_at_ms: self.created_at_ms[row_idx],
             updated_at_ms: self.updated_at_ms[row_idx],
-            items: self
-                .custom_items
-                .get(&row_idx)
-                .cloned()
-                .unwrap_or_default(),
+            items: self.custom_items.get(&row_idx).cloned().unwrap_or_default(),
         })
     }
 
@@ -1105,12 +1108,8 @@ pub struct OperationalTableProvider {
 
 impl OperationalTableProvider {
     /// Creates a new `OperationalTableProvider` from operational dispute rows.
-    pub fn new(
-        table_name: impl Into<String>,
-        records: Vec<OperationalDisputeRecord>,
-    ) -> Self {
-        let mut order_id_index: HashMap<String, Vec<usize>> =
-            HashMap::with_capacity(records.len());
+    pub fn new(table_name: impl Into<String>, records: Vec<OperationalDisputeRecord>) -> Self {
+        let mut order_id_index: HashMap<String, Vec<usize>> = HashMap::with_capacity(records.len());
         for (idx, rec) in records.iter().enumerate() {
             order_id_index
                 .entry(rec.order_id.clone())
@@ -1260,7 +1259,10 @@ impl SessionContext {
     }
 
     /// Point lookup for a single order by `order_id` against `orders_current_state`.
-    pub fn query_order_by_id(&self, order_id: &str) -> Result<Option<OrderDetails>, LakehouseError> {
+    pub fn query_order_by_id(
+        &self,
+        order_id: &str,
+    ) -> Result<Option<OrderDetails>, LakehouseError> {
         if order_id.trim().is_empty() {
             return Err(LakehouseError::InvalidQuery(
                 "order_id must not be empty".to_string(),
@@ -1438,10 +1440,9 @@ impl SessionContext {
                 .next()
                 .ok_or_else(|| LakehouseError::InvalidQuery("Missing left table in JOIN".into()))?;
             let right_part = after_from[join_pos + 4..].trim();
-            let right_table = right_part
-                .split_whitespace()
-                .next()
-                .ok_or_else(|| LakehouseError::InvalidQuery("Missing right table in JOIN".into()))?;
+            let right_table = right_part.split_whitespace().next().ok_or_else(|| {
+                LakehouseError::InvalidQuery("Missing right table in JOIN".into())
+            })?;
 
             let mut rows = self.execute_federated_join(left_table, right_table)?;
             let offset = extract_sql_usize(after_from, "offset")?.unwrap_or(0);
@@ -1756,8 +1757,8 @@ pub fn write_delta_table_snapshot(
 
     let data_file_name = "part-00000-orders-snapshot.json";
     let data_file_path = dir.join(data_file_name);
-    let data_json = serde_json::to_string(records)
-        .map_err(|e| LakehouseError::StorageIo(e.to_string()))?;
+    let data_json =
+        serde_json::to_string(records).map_err(|e| LakehouseError::StorageIo(e.to_string()))?;
     fs::write(&data_file_path, data_json.as_bytes())
         .map_err(|e| LakehouseError::StorageIo(e.to_string()))?;
 

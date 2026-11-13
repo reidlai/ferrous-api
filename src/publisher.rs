@@ -278,9 +278,10 @@ impl IggyPublisher for TcpIggyPublisher {
             stream.write_all(&frame_bytes).await.map_err(|e| {
                 PublisherError::Io(format!("Failed to write command frame to Iggy socket: {e}"))
             })?;
-            stream.flush().await.map_err(|e| {
-                PublisherError::Io(format!("Failed to flush Iggy TCP socket: {e}"))
-            })?;
+            stream
+                .flush()
+                .await
+                .map_err(|e| PublisherError::Io(format!("Failed to flush Iggy TCP socket: {e}")))?;
             Ok(())
         })
         .await

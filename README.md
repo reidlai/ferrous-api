@@ -1,163 +1,169 @@
 # ferrous-api
 
-[← Back to FerrousCX Root Architecture](https://github.com/reidlai/ferrous-cx)
+[<- Back to FerrousCX Root Architecture](https://github.com/reidlai/ferrous-cx)
 
 > **Contract-First Rust/Axum API Service for FerrousCX Platform**  
-> Driven by [Goa Design v3](https://goa.design/) as the declarative API specification DSL, generating OpenAPI v3 specifications, compiling them into strongly typed Rust traits via `rust-axum` OpenAPI generators, and streaming real-time events to the browser client via native **Axum SSE**.
+> Driven by [Goa Design v3](https://goa.design/) as the declarative API specification DSL (`design/`), compiled to OpenAPI v3 (`gen/http/openapi3.json`) and strongly typed Rust/Axum traits (`src/generated/`), with Kanidm JWT PEP middleware, direct Apache Iggy WAL command ingestion, in-process columnar lakehouse SQL (`SessionContext`), and cooperative-cancellation Axum SSE streams.
 
 ---
 
-## 🎯 Architectural Role
+## C4 Architecture Slice (Container & Component View)
 
-`ferrous-api` is the unified contract-first HTTP API Service and real-time streaming hub for FerrousCX:
-1. **Declarative Contract Modeling (`design/`):** API routes, request/response models, validation constraints, and Kanidm JWT security scopes are declared in Goa Design DSL (`design/design.go`).
-2. **OpenAPI v3 Generation (`gen/openapi/`):** Goa compiles the DSL into a canonical OpenAPI v3 specification.
-3. **Rust-Axum Codegen (`src/generated/`):** `openapi-generator -g rust-axum` compiles the OpenAPI specification into strongly typed Rust traits, request decoders, and data transfer objects.
-4. **Native Axum Runtime (`src/handlers/`):** Handlers implement the generated Rust traits in pure Rust (`axum` 0.7+, `tokio` 1.40+).
-5. **Real-Time Browser Sync (Axum SSE):** Exposes Server-Sent Events (`axum::response::sse::Sse`) with automatic keep-alive and cooperative cancellation (`CancellationToken`) when Svelte 5 clients abort or switch context.
-6. **In-Process Analytical Querying:** Directly embeds `Apache DataFusion` (`Arc<SessionContext>`) to scan Delta Lake Parquet tables in **<3ms** with zero IPC overhead.
+```mermaid
+flowchart LR
+    UI["ferrous-frontend<br/>(Svelte 5 + EventSource / Fetch)"]
+    IAM["ferrous-iam<br/>(Kanidm PAP/PDP & JWKS)"]
+    IGGY["Apache Iggy<br/>(orders/intake WAL)"]
+    DELTA["Delta Lake<br/>(delta/orders_current_state)"]
+    ARROYO["Arroyo & Pipeline<br/>(Watermark / Commit Stats)"]
 
-```
-┌───────────────────────────────────────────────┐
-│     design/design.go (Goa v3 Design DSL)      │
-└───────────────────────┬───────────────────────┘
-                        │ goa gen
-                        ▼
-┌───────────────────────────────────────────────┐
-│   gen/openapi/openapi3.json (OpenAPI v3)      │
-└───────────────────────┬───────────────────────┘
-                        │ openapi-generator -g rust-axum
-                        ▼
-┌───────────────────────────────────────────────┐
-│  src/generated/ (Rust Models & Axum Traits)   │
-└───────────────────────┬───────────────────────┘
-                        │ implements traits
-                        ▼
-┌───────────────────────────────────────────────┐
-│      src/handlers/ (Pure Rust / Axum)         │
-│  • In-Process Apache DataFusion (<3ms SQL)    │
-│  • Direct Apache Iggy fsync (<1ms WAL)        │
-│  • Kanidm JWT Signature Verification (<0.2ms) │
-│  • Native Axum SSE (Browser Sync)             │
-└───────────────────────┬───────────────────────┘
-                        │ Server-Sent Events / HTTP
-                        ▼
-┌───────────────────────────────────────────────┐
-│   ferrous-frontend (Svelte 5 + RxJS Runes)    │
-└───────────────────────────────────────────────┘
+    subgraph API["ferrous-api (Axum 0.7 + Tokio Runtime :8080)"]
+        PEP["Kanidm PEP Middleware<br/>(src/auth.rs: RequireScope + JwtValidator)"]
+        ROUTER["Contract-First Router<br/>(src/generated/apis.rs)"]
+        CMD["OrdersHandler<br/>(src/handlers/orders.rs)"]
+        PUB["IggyPublisher<br/>(src/publisher.rs)"]
+        QRY["QueriesHandler<br/>(src/handlers/queries.rs)"]
+        LH["In-Process Lakehouse<br/>(src/lakehouse.rs: SessionContext + TableProvider)"]
+        STR["StreamsHandler<br/>(src/handlers/streams.rs)"]
+        SSE["SSE & Telemetry Hubs<br/>(src/sse.rs + src/telemetry.rs + CancellationToken)"]
+    end
+
+    UI -->|"HTTPS / Bearer JWT"| PEP
+    PEP -->|"JWKS / Token Validation (<0.2ms)"| IAM
+    PEP --> ROUTER
+    ROUTER --> CMD
+    ROUTER --> QRY
+    ROUTER --> STR
+    CMD --> PUB -->|"TCP Wire Protocol (<5ms)"| IGGY
+    QRY --> LH -->|"Zero-Copy Columnar Scan (<3ms p95)"| DELTA
+    STR --> SSE -->|"text/event-stream + <50ms abort"| UI
+    ARROYO -.->|"Read-Only Telemetry Poll"| SSE
 ```
 
 ---
 
-## 🚀 Key Responsibilities
+## Contract-First Pipeline
 
-| Domain Service | Description | Protocol / Backend |
-| :--- | :--- | :--- |
-| **Authentication & Authorization (PEP)** | Operates strictly as Policy Enforcement Point (PEP) for Kanidm (`ferrous-iam`, the authoritative PAP/PDP). Intercepts requests via Axum Tower middleware, validates JWT signatures against cached JWKS (<0.2ms), and enforces authorities, roles, and policies defined and configured exclusively in Kanidm. | HTTP Bearer, JWKS from `ferrous-iam` |
-| **CQRS-ES Command Ingress** | Dispatches command mutations (`IssueCredit`, `CancelOrder`) to `ferrous-cqrses` and Apache Iggy `orders/intake` WAL, returning HTTP 202 upon `fsync` ACK. | Direct TCP / Iggy Wire Protocol |
-| **Axum SSE Streaming** | Streams live ticket updates, agent thoughts, and SLA breach warnings directly to `ferrous-frontend` via native Axum SSE with `CancellationToken` cancellation. | Server-Sent Events (`axum::response::sse::Sse`) |
-| **Historical Analytics Ingress** | In-process Apache DataFusion (`Arc<SessionContext>`) scanning Delta Lake historical partitions in <3ms. | In-Process Vectorized SQL |
-| **Replay Telemetry (read-only)** | Reports replay rate, high watermark and consumer lag for `olist/orders_stream` to the Replay Monitor in `ferrous-frontend` (FR-30). There is no start, pause or speed control: replay is never controlled from the platform. | HTTP `GET` / Axum SSE |
+1. **Declarative Contract Modeling (`design/`):** API routes, request/response models, validation constraints, and Kanidm JWT security scopes are declared in Goa Design v3 DSL (`design/design.go`, `orders.go`, `queries.go`, `streams.go`).
+2. **OpenAPI v3 Generation (`gen/http/openapi3.json`):** `scripts/generate-openapi.ps1` / `.sh` compiles or validates the canonical OpenAPI 3.0.3 specification.
+3. **Rust-Axum Codegen (`src/generated/`):** `scripts/generate-axum.ps1` / `.sh` generates or validates strongly typed Axum server traits (`OrdersApi`, `QueriesApi`, `StreamsApi`), `ValidatedJson<T>`, and RFC 7807 `ProblemDetails`.
+4. **Pure-Rust Handlers (`src/handlers/`):** `OrdersHandler`, `QueriesHandler`, and `StreamsHandler` implement the generated traits without drift.
 
 ---
 
-## 📁 Repository Layout
+## OpenAPI Endpoint Table
 
-```
+Authoritative contract: [`gen/http/openapi3.json`](gen/http/openapi3.json) & [`src/generated/apis.rs`](src/generated/apis.rs).
+
+| Method | Path | Operation / Handler | Auth Scope | Responses | Description |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/commands/orders/issue-credit` | `orders#issue_credit` | `jwt_bearer` (`api:write`) | `202`, `400`, `401`, `403`, `422`, `500` | Dispatch `IssueCourtesyCredit` command to Iggy WAL |
+| `POST` | `/api/v1/commands/orders/cancel` | `orders#cancel_order` | `jwt_bearer` (`api:write`) | `202`, `400`, `401`, `403`, `422`, `500` | Dispatch `CancelOrder` command to Iggy WAL |
+| `GET` | `/api/v1/orders/{order_id}` | `queries#get_order` | `jwt_bearer` (`api:read`) | `200`, `400`, `401`, `404`, `500` | Fetch single order details by ID from Delta Lake |
+| `GET` | `/api/v1/orders` | `queries#list_orders` | `jwt_bearer` (`api:read`) | `200`, `400`, `401`, `500` | Query paginated orders from Delta Lake table |
+| `GET` | `/api/v1/events/stream` | `streams#event_stream` | `jwt_bearer` (`api:read`) | `200` (`text/event-stream`), `400`, `401`, `500` | Stream domain events and AI agent thoughts over SSE |
+| `GET` | `/api/v1/benchmarks/{run_id}/stream` | `streams#benchmark_stream` | `jwt_bearer` (`api:read`) | `200` (`text/event-stream`), `400`, `401`, `404`, `500` | Stream real-time TTFT and token performance metrics |
+| `GET` | `/api/v1/telemetry/pipeline/stream` | `streams#pipeline_telemetry_stream` | `jwt_bearer` (`api:read`) | `200` (`text/event-stream`), `401`, `500` | Read-only pipeline watermark lag and commit counts |
+| `GET` | `/healthz` | Liveness probe | Public | `200` (`text/plain`) | Process liveness check |
+| `GET` | `/health/ready` | Readiness probe | Public | `200` (`text/plain`) | Service readiness check |
+
+---
+
+## Repository Layout
+
+```text
 ferrous-api/
 ├── .github/workflows/
-│   └── devsecops-ci.yml        # Tier 1 Rust CI (clippy, cargo-audit, test)
-├── .pre-commit-config.yaml      # Pre-commit hooks (cargo fmt, gitleaks)
+│   └── devsecops-ci.yml         # Tier 1 Rust CI (fmt, clippy, test, audit, deny, semgrep)
+├── .pre-commit-config.yaml      # Shift-left hooks (hygiene, gitleaks, fmt, clippy, test)
+├── deny.toml                    # cargo-deny advisories, license allowlist, bans, sources
 ├── design/                      # Goa v3 API Design DSL (Single Source of Truth)
-│   ├── design.go                # API root, security schemes & middleware
+│   ├── design.go                # API root, security schemes & RFC 7807 errors
 │   ├── orders.go                # Orders, credits, and dispute command endpoints
-│   ├── queries.go               # Analytical query endpoints (DataFusion lakehouse)
+│   ├── queries.go               # Analytical query endpoints (lakehouse)
 │   └── streams.go               # SSE stream definitions
-├── gen/                         # Generated OpenAPI Artifacts
-│   └── openapi/
-│       └── openapi3.json        # Compiled OpenAPI v3 specification
+├── gen/
+│   └── http/
+│       └── openapi3.json        # Compiled OpenAPI v3.0.3 specification
 ├── scripts/
-│   ├── generate-openapi.sh      # Executes 'goa gen' to produce openapi3.json
-│   └── generate-axum.sh         # Executes 'openapi-generator -g rust-axum'
+│   ├── audit-api.ps1            # Tier 1 local audit & scan gate (PowerShell, <3 min)
+│   ├── audit-api.sh             # Tier 1 local audit & scan gate (POSIX/Bash, <3 min)
+│   ├── generate-openapi.ps1/.sh # Executes/validates 'goa gen' -> gen/http/openapi3.json
+│   └── generate-axum.ps1/.sh    # Executes/validates 'openapi-generator' -> src/generated/
 ├── src/
 │   ├── generated/               # Generated Rust models, traits, and router (DO NOT EDIT)
-│   │   ├── apis/                # Generated Axum API server traits
-│   │   ├── models/              # Generated Serde payload structs
+│   │   ├── apis.rs              # Axum API server traits & build_api_router()
+│   │   ├── models.rs            # Serde DTOs & ValidatePayload implementations
 │   │   └── mod.rs
 │   ├── handlers/                # Domain implementations of generated Axum traits
 │   │   ├── orders.rs            # Implements OrdersApi (Iggy WAL dispatch)
-│   │   ├── queries.rs           # Implements QueriesApi (DataFusion scans)
-│   │   └── sse.rs               # Axum SSE streaming implementations
-│   ├── state.rs                 # Shared AppState (Arc<SessionContext>, IggyClient)
-│   ├── auth.rs                  # Kanidm JWT validation middleware & JWKS cache
-│   └── main.rs                  # Axum router setup & server bootstrap (:8080)
-├── Cargo.toml                   # Axum, Tokio, DataFusion, Serde, JsonWebToken
-├── Dockerfile                   # Multi-stage optimized Rust build (distroless cc-debian12)
-└── README.md                    # Submodule specification & quickstart
+│   │   ├── queries.rs           # Implements QueriesApi (lakehouse scans)
+│   │   ├── streams.rs           # Implements StreamsApi (SSE & telemetry streams)
+│   │   └── mod.rs
+│   ├── auth.rs                  # Kanidm JWT PEP middleware, RequireScope & JWKS cache
+│   ├── lakehouse.rs             # Embedded SessionContext, DeltaTableProvider & federation
+│   ├── lib.rs                   # Library exports & router assembly helpers
+│   ├── main.rs                  # Axum HTTP server bootstrap (:8080)
+│   ├── publisher.rs             # IggyPublisher trait, InMemoryIggyPublisher & TcpIggyPublisher
+│   ├── sse.rs                   # EventStreamBroadcaster & CancellationToken abort guard
+│   ├── state.rs                 # Shared AppState wiring dependencies
+│   └── telemetry.rs             # BenchmarkTelemetryBroadcaster & PipelineTelemetryHub
+├── tests/                       # Integration & contract test suites (61 tests)
+│   ├── test_auth_middleware.rs
+│   ├── test_command_ingestion.rs
+│   ├── test_generated_traits.rs
+│   ├── test_lakehouse_queries.rs
+│   ├── test_openapi_contract.rs
+│   ├── test_sse_cancellation.rs
+│   └── test_telemetry_streams.rs
+├── Cargo.toml                   # Crate manifest (depends on ../ferrous-cqrses)
+├── Cargo.lock
+├── go.mod
+└── README.md
 ```
 
 ---
 
-## 🛠️ Developer Workflow
+## Standalone Quickstart & Verification (< 3 Minutes)
 
-### 1. Update API Contract
-Edit declarative endpoints, schemas, or security scopes in `design/`:
-```go
-// design/orders.go
-var _ = Service("orders", func() {
-    Method("issue_credit", func() {
-        Payload(IssueCreditPayload)
-        Result(IssueCreditResult)
-        HTTP(func() {
-            POST("/api/v1/commands/orders/issue-credit")
-            Response(StatusAccepted)
-        })
-    })
-})
+Run and verify `ferrous-api` standalone without Docker or external services (in-memory Iggy WAL, local JWT validator, and embedded columnar lakehouse initialize automatically by default):
+
+> **Prerequisites:**
+> - Rust stable toolchain (`rustfmt`, `clippy`) plus a C compiler (`cc`) and `cmake` (required to build `aws-lc-sys` for `jsonwebtoken` FIPS/audited TLS crypto).
+> - Sibling `../ferrous-cqrses` directory checked out alongside `ferrous-api` (present automatically in the `ferrouscx-bmad` superproject; referenced via path dependency in `Cargo.toml`).
+
+### 1. Run the Full Tier 1 Local Audit Gate (`< 3 minutes`)
+
+**Windows (PowerShell):**
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\audit-api.ps1
 ```
 
-### 2. Generate OpenAPI Spec & Axum Traits
+**Linux / macOS (Bash):**
 ```bash
-# 1. Generate OpenAPI v3 JSON using Goa
-goa gen ferrous-api/design -o gen/
-
-# 2. Generate Axum traits and models using openapi-generator
-openapi-generator-cli generate \
-    -i gen/http/openapi3.json \
-    -g rust-axum \
-    -o src/generated
+./scripts/audit-api.sh
 ```
 
-### 3. Implement Handlers in Pure Rust
-Implement the generated server traits in `src/handlers/`:
-```rust
-#[async_trait]
-impl OrdersApi for OrdersHandler {
-    async fn issue_credit(
-        &self,
-        claims: Claims,
-        body: IssueCreditPayload,
-    ) -> Result<IssueCreditResponse, String> {
-        // Dispatches command to Apache Iggy WAL in <1ms
-        self.state.iggy_client.send_command(&body).await?;
-        Ok(IssueCreditResponse::Accepted)
-    }
-}
-```
+The audit script executes all 6 Tier 1 Rust DevSecOps gates in sequence:
+1. `cargo fmt --all -- --check` — formatting check
+2. `cargo clippy --all-targets -- -D warnings` — zero-warning static analysis
+3. `cargo test --all-targets` — unit, contract, auth, lakehouse, and SSE cancellation tests
+4. `cargo audit` — RustSec dependency vulnerability scan
+5. `cargo deny check` — supply-chain, advisory, and license compliance (`deny.toml`)
+6. `semgrep scan --config auto --error --quiet .` — SAST security scan (skipped with `[WARN]` locally if `semgrep` is not installed; enforced in CI)
 
-### 4. Run & Test Locally
+### 2. Run the Standalone API Server
+
 ```bash
 cargo run --bin ferrous-api
 ```
-- **HTTP & SSE Service Endpoint**: `http://localhost:8080`
-- **Health Check**: `http://localhost:8080/healthz`
+- **HTTP & SSE Service Endpoint:** `http://localhost:8080`
+- **Liveness Probe:** `GET http://localhost:8080/healthz`
+- **Readiness Probe:** `GET http://localhost:8080/health/ready`
 
----
+### 3. Optional Pre-Commit Setup
 
-## 🛡️ DevSecOps & Quality Assurance (Tier 1 Rust)
-
-`ferrous-api` adheres to strict Rust engineering and security baselines enforced via GitHub Actions:
-- **Contract Drift Gate:** CI executes `goa gen` and asserts `git diff --exit-code gen/openapi/openapi3.json` to verify checked-in OpenAPI specs and generated Rust traits match the design DSL.
-- **Linting:** `cargo clippy -- -D warnings` enforcing zero warnings.
-- **Vulnerability Audit:** `cargo audit` and `cargo deny check` scanning crate dependencies.
-- **Testing:** `cargo test --all-targets` enforcing full unit coverage on handlers and SSE cancel semantics.
+```bash
+pre-commit install
+pre-commit run --all-files
+```

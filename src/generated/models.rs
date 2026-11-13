@@ -200,7 +200,10 @@ impl ValidatePayload for IssueCreditRequest {
         if self.order_id.trim().is_empty() {
             errors.push(InvalidParam::new("order_id", "order_id cannot be blank"));
         } else if uuid::Uuid::parse_str(self.order_id.trim()).is_err() {
-            errors.push(InvalidParam::new("order_id", "order_id must be a valid UUID"));
+            errors.push(InvalidParam::new(
+                "order_id",
+                "order_id must be a valid UUID",
+            ));
         }
 
         if self.amount_cents <= 0 {
@@ -247,7 +250,10 @@ impl ValidatePayload for CancelOrderRequest {
         if self.order_id.trim().is_empty() {
             errors.push(InvalidParam::new("order_id", "order_id cannot be blank"));
         } else if uuid::Uuid::parse_str(self.order_id.trim()).is_err() {
-            errors.push(InvalidParam::new("order_id", "order_id must be a valid UUID"));
+            errors.push(InvalidParam::new(
+                "order_id",
+                "order_id must be a valid UUID",
+            ));
         }
 
         let reason_chars = self.reason.trim().chars().count();

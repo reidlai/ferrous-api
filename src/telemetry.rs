@@ -123,10 +123,7 @@ struct BenchmarkBroadcasterInner {
 
 impl BenchmarkBroadcasterInner {
     fn cleanup_run_if_idle(&self, run_id: &str) {
-        let mut tokens_guard = self
-            .run_tokens
-            .write()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut tokens_guard = self.run_tokens.write().unwrap_or_else(|e| e.into_inner());
         let sub_count = self
             .run_subscribers
             .read()
@@ -520,10 +517,12 @@ impl BenchmarkTelemetryBroadcaster {
         let instance = format!("/api/v1/benchmarks/{run_id}/stream");
 
         if self.requires_registered_runs() && !self.is_run_registered(&run_id) {
-            return Ok(BenchmarkStreamResponse::NotFound(ProblemDetails::not_found(
-                format!("Benchmark run '{run_id}' was not found"),
-                Some(instance),
-            )));
+            return Ok(BenchmarkStreamResponse::NotFound(
+                ProblemDetails::not_found(
+                    format!("Benchmark run '{run_id}' was not found"),
+                    Some(instance),
+                ),
+            ));
         }
 
         let rx = self.inner.sender.subscribe();
@@ -1183,7 +1182,10 @@ impl PipelineTelemetryHub {
                         return Some((Ok::<Event, Infallible>(event), state));
                     }
                     Err(TryRecvError::Lagged(skipped)) => {
-                        warn!(skipped, "Pipeline telemetry SSE subscriber lagged; continuing");
+                        warn!(
+                            skipped,
+                            "Pipeline telemetry SSE subscriber lagged; continuing"
+                        );
                         continue;
                     }
                     Err(TryRecvError::Closed) => return None,
@@ -1369,7 +1371,10 @@ async fn probe_arroyo_stats(url_opt: Option<&str>, timeout: Duration) -> Result<
 fn probe_delta_commits(dir_opt: Option<&Path>) -> Result<i64, String> {
     let base_dir = dir_opt.ok_or_else(|| "delta_data_dir not configured".to_string())?;
     if !base_dir.exists() {
-        return Err(format!("Delta directory '{}' does not exist", base_dir.display()));
+        return Err(format!(
+            "Delta directory '{}' does not exist",
+            base_dir.display()
+        ));
     }
 
     let direct_log = base_dir.join("_delta_log");
@@ -1440,7 +1445,9 @@ fn decode_chunked_body(raw_body: &str) -> Result<String, String> {
 
 async fn fetch_http_json(url: &str, timeout: Duration) -> Result<Value, String> {
     if url.starts_with("https://") {
-        return Err(format!("TLS (https://) is not supported for probe URL '{url}'"));
+        return Err(format!(
+            "TLS (https://) is not supported for probe URL '{url}'"
+        ));
     }
     if url.contains("://") && !url.starts_with("http://") {
         return Err(format!("unsupported URL scheme for probe URL '{url}'"));
@@ -1476,7 +1483,9 @@ async fn fetch_http_json(url: &str, timeout: Duration) -> Result<Value, String> 
             .await
             .map_err(|e| format!("read error from {addr}: {e}"))?;
         if buf.len() > MAX_HTTP_PROBE_BYTES {
-            return Err(format!("HTTP probe response from {url} exceeded {MAX_HTTP_PROBE_BYTES} bytes"));
+            return Err(format!(
+                "HTTP probe response from {url} exceeded {MAX_HTTP_PROBE_BYTES} bytes"
+            ));
         }
 
         let raw = String::from_utf8_lossy(&buf);

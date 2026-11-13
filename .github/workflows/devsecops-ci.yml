@@ -1,0 +1,72 @@
+name: ferrous-api Tier 1 DevSecOps CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'epic-*'
+  pull_request:
+    branches:
+      - main
+      - 'epic-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  tier1-quality-and-security-gate:
+    name: Tier 1 Rust DevSecOps Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Install cargo-audit and cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit,cargo-deny
+
+      - name: Install Semgrep
+        run: |
+          python3 -m venv /tmp/semgrep
+          /tmp/semgrep/bin/pip install --upgrade pip
+          /tmp/semgrep/bin/pip install semgrep
+          echo "/tmp/semgrep/bin" >> "$GITHUB_PATH"
+
+      - name: "[1/6] Rust Format Gate (cargo fmt)"
+        run: cargo fmt --all -- --check
+
+      - name: "[2/6] Rust Static Analysis (cargo clippy)"
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: "[3/6] Rust Test Suite (cargo test)"
+        run: cargo test --all-targets --verbose
+
+      - name: "[4/6] Dependency Vulnerability Audit (cargo audit)"
+        run: cargo audit
+
+      - name: "[5/6] Supply Chain & License Compliance (cargo deny)"
+        run: cargo deny check
+
+      - name: "[6/6] Static Application Security Testing (semgrep)"
+        run: semgrep scan --config auto --error --quiet .
