@@ -923,11 +923,33 @@
             "description": "Inter-token latency in microseconds",
             "example": 3200
           },
+          "itl_jitter_micros": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Inter-token latency jitter in microseconds",
+            "example": 180
+          },
           "token_delta": {
             "type": "integer",
             "format": "int64",
             "description": "Token count increment",
             "example": 5
+          },
+          "tps": {
+            "type": "number",
+            "format": "double",
+            "description": "Tokens per second throughput",
+            "example": 312.5
+          },
+          "model_id": {
+            "type": "string",
+            "description": "Evaluated LLM model identifier",
+            "example": "llama-3.1-8b-instruct"
+          },
+          "provider": {
+            "type": "string",
+            "description": "Inference runtime provider",
+            "example": "vllm"
           },
           "timestamp": {
             "type": "string",
@@ -947,6 +969,12 @@
             "description": "Iggy broker commit log lag count",
             "example": 12
           },
+          "iggy_fsync_latency_us": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Iggy WAL fsync commit latency in microseconds",
+            "example": 85
+          },
           "arroyo_watermark_lag_ms": {
             "type": "integer",
             "format": "int64",
@@ -958,6 +986,39 @@
             "format": "int64",
             "description": "Delta Lake 2PC commit sequence count",
             "example": 8920
+          },
+          "olist_replay_rate_eps": {
+            "type": "number",
+            "format": "double",
+            "description": "Read-only olist/orders_stream replay rate in events per second",
+            "example": 1250.0
+          },
+          "olist_high_watermark": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Read-only olist/orders_stream topic high watermark offset",
+            "example": 98420
+          },
+          "olist_consumer_lag": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Read-only olist/orders_stream consumer group lag",
+            "example": 12
+          },
+          "iggy_status": {
+            "type": "string",
+            "description": "Iggy telemetry source availability status (available or unavailable)",
+            "example": "available"
+          },
+          "arroyo_status": {
+            "type": "string",
+            "description": "Arroyo telemetry source availability status (available or unavailable)",
+            "example": "available"
+          },
+          "delta_status": {
+            "type": "string",
+            "description": "Delta Lake commit log source availability status (available or unavailable)",
+            "example": "available"
           },
           "timestamp": {
             "type": "string",

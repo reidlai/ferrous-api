@@ -210,11 +210,23 @@ impl IntoResponse for EventStreamResponse {
 }
 
 /// Response wrapper for benchmark telemetry SSE stream.
-pub struct BenchmarkStreamResponse(pub Sse<BoxedSseStream>);
+pub enum BenchmarkStreamResponse {
+    Ok(Sse<BoxedSseStream>),
+    NotFound(ProblemDetails),
+}
+
+impl From<Sse<BoxedSseStream>> for BenchmarkStreamResponse {
+    fn from(sse: Sse<BoxedSseStream>) -> Self {
+        Self::Ok(sse)
+    }
+}
 
 impl IntoResponse for BenchmarkStreamResponse {
     fn into_response(self) -> Response {
-        self.0.into_response()
+        match self {
+            Self::Ok(sse) => sse.into_response(),
+            Self::NotFound(problem) => problem.into_response(),
+        }
     }
 }
 

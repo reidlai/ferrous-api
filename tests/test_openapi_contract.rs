@@ -302,26 +302,20 @@ fn test_models_json_roundtrip() {
     assert_eq!(de_item.event_type, "CourtesyCreditIssued");
 
     // BenchmarkTelemetryItem
-    let bench = BenchmarkTelemetryItem {
-        run_id: "bench-1".to_string(),
-        step: 5,
-        ttft_micros: 10000,
-        itl_micros: 2500,
-        token_delta: 2,
-        timestamp: Utc::now(),
-    };
+    let bench = BenchmarkTelemetryItem::new("bench-1", 5, 10000, 2500, 2)
+        .with_jitter(45)
+        .with_model("qwen2.5:7b", "ollama");
     let json_bench = serde_json::to_string(&bench).unwrap();
     let de_bench: BenchmarkTelemetryItem = serde_json::from_str(&json_bench).unwrap();
     assert_eq!(de_bench.ttft_micros, 10000);
+    assert_eq!(de_bench.itl_jitter_micros, Some(45));
 
     // PipelineTelemetryItem
-    let pipe = PipelineTelemetryItem {
-        iggy_commit_lag: 0,
-        arroyo_watermark_lag_ms: 15,
-        delta_commit_count: 42,
-        timestamp: Utc::now(),
-    };
+    let pipe = PipelineTelemetryItem::new(0, 15, 42)
+        .with_iggy_fsync_latency_us(320)
+        .with_olist_metrics(25.0, 1042, 0);
     let json_pipe = serde_json::to_string(&pipe).unwrap();
     let de_pipe: PipelineTelemetryItem = serde_json::from_str(&json_pipe).unwrap();
     assert_eq!(de_pipe.arroyo_watermark_lag_ms, 15);
+    assert_eq!(de_pipe.iggy_fsync_latency_us, Some(320));
 }

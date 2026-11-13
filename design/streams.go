@@ -39,8 +39,20 @@ var BenchmarkTelemetryItemType = Type("BenchmarkTelemetryItem", func() {
 	Attribute("itl_micros", Int64, "Inter-token latency in microseconds", func() {
 		Example(3200)
 	})
+	Attribute("itl_jitter_micros", Int64, "Inter-token latency jitter in microseconds", func() {
+		Example(180)
+	})
 	Attribute("token_delta", Int64, "Token count increment", func() {
 		Example(5)
+	})
+	Attribute("tps", Float64, "Tokens per second throughput", func() {
+		Example(312.5)
+	})
+	Attribute("model_id", String, "Evaluated LLM model identifier", func() {
+		Example("llama-3.1-8b-instruct")
+	})
+	Attribute("provider", String, "Inference runtime provider", func() {
+		Example("vllm")
 	})
 	Attribute("timestamp", String, "RFC 3339 timestamp", func() {
 		Format(FormatDateTime)
@@ -54,11 +66,32 @@ var PipelineTelemetryItemType = Type("PipelineTelemetryItem", func() {
 	Attribute("iggy_commit_lag", Int64, "Iggy broker commit log lag count", func() {
 		Example(12)
 	})
+	Attribute("iggy_fsync_latency_us", Int64, "Iggy WAL fsync commit latency in microseconds", func() {
+		Example(85)
+	})
 	Attribute("arroyo_watermark_lag_ms", Int64, "Arroyo streaming watermark lag in milliseconds", func() {
 		Example(145)
 	})
 	Attribute("delta_commit_count", Int64, "Delta Lake 2PC commit sequence count", func() {
 		Example(8920)
+	})
+	Attribute("olist_replay_rate_eps", Float64, "Read-only olist/orders_stream replay rate in events per second", func() {
+		Example(1250.0)
+	})
+	Attribute("olist_high_watermark", Int64, "Read-only olist/orders_stream topic high watermark offset", func() {
+		Example(98420)
+	})
+	Attribute("olist_consumer_lag", Int64, "Read-only olist/orders_stream consumer group lag", func() {
+		Example(12)
+	})
+	Attribute("iggy_status", String, "Iggy telemetry source availability status (available or unavailable)", func() {
+		Example("available")
+	})
+	Attribute("arroyo_status", String, "Arroyo telemetry source availability status (available or unavailable)", func() {
+		Example("available")
+	})
+	Attribute("delta_status", String, "Delta Lake commit log source availability status (available or unavailable)", func() {
+		Example("available")
 	})
 	Attribute("timestamp", String, "RFC 3339 timestamp", func() {
 		Format(FormatDateTime)

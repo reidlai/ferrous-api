@@ -10,6 +10,7 @@ pub mod lakehouse;
 pub mod publisher;
 pub mod sse;
 pub mod state;
+pub mod telemetry;
 
 pub use auth::{AuthError, JwtValidator, RequireScope, SCOPE_API_READ, SCOPE_API_WRITE};
 pub use generated::*;
@@ -30,6 +31,13 @@ pub use sse::{
     DOMAIN_EVENT_SSE_NAME, GLOBAL_STREAM_SCOPE,
 };
 pub use state::AppState;
+pub use telemetry::{
+    BenchmarkTelemetryBroadcaster, PipelineCollectorConfig, PipelineTelemetryHub,
+    TelemetryTaskHandle, BENCHMARK_STREAM_INSTANCE, BENCHMARK_TELEMETRY_SSE_NAME,
+    DEFAULT_ARROYO_API_URL, DEFAULT_IGGY_STATS_URL, DEFAULT_PIPELINE_POLL_INTERVAL,
+    DEFAULT_SOURCE_HTTP_TIMEOUT, PIPELINE_STREAM_INSTANCE, PIPELINE_TELEMETRY_SSE_NAME,
+    SOURCE_STATUS_AVAILABLE, SOURCE_STATUS_UNAVAILABLE,
+};
 
 use std::sync::Arc;
 use axum::Router;

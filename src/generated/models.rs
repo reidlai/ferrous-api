@@ -373,21 +373,140 @@ pub struct DomainEventStreamItem {
 }
 
 /// Real-time agent benchmark telemetry measurement.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BenchmarkTelemetryItem {
     pub run_id: String,
     pub step: i64,
     pub ttft_micros: i64,
     pub itl_micros: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub itl_jitter_micros: Option<i64>,
     pub token_delta: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tps: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
     pub timestamp: DateTime<Utc>,
 }
 
+impl BenchmarkTelemetryItem {
+    /// Creates a new [`BenchmarkTelemetryItem`] with required fields and `None` optional metadata.
+    pub fn new(
+        run_id: impl Into<String>,
+        step: i64,
+        ttft_micros: i64,
+        itl_micros: i64,
+        token_delta: i64,
+    ) -> Self {
+        let tps = if itl_micros > 0 && token_delta >= 0 {
+            Some((token_delta as f64 * 1_000_000.0) / itl_micros as f64)
+        } else {
+            None
+        };
+        Self {
+            run_id: run_id.into(),
+            step,
+            ttft_micros,
+            itl_micros,
+            itl_jitter_micros: None,
+            token_delta,
+            tps,
+            model_id: None,
+            provider: None,
+            timestamp: Utc::now(),
+        }
+    }
+
+    pub fn with_jitter(mut self, itl_jitter_micros: i64) -> Self {
+        self.itl_jitter_micros = Some(itl_jitter_micros);
+        self
+    }
+
+    pub fn with_tps(mut self, tps: f64) -> Self {
+        self.tps = Some(tps);
+        self
+    }
+
+    pub fn with_model(mut self, model_id: impl Into<String>, provider: impl Into<String>) -> Self {
+        self.model_id = Some(model_id.into());
+        self.provider = Some(provider.into());
+        self
+    }
+}
+
 /// Streaming pipeline health and lag telemetry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PipelineTelemetryItem {
     pub iggy_commit_lag: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iggy_fsync_latency_us: Option<i64>,
     pub arroyo_watermark_lag_ms: i64,
     pub delta_commit_count: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub olist_replay_rate_eps: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub olist_high_watermark: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub olist_consumer_lag: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iggy_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arroyo_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta_status: Option<String>,
     pub timestamp: DateTime<Utc>,
+}
+
+impl PipelineTelemetryItem {
+    /// Creates a new [`PipelineTelemetryItem`] with required fields and `"available"` source statuses.
+    pub fn new(
+        iggy_commit_lag: i64,
+        arroyo_watermark_lag_ms: i64,
+        delta_commit_count: i64,
+    ) -> Self {
+        Self {
+            iggy_commit_lag,
+            iggy_fsync_latency_us: None,
+            arroyo_watermark_lag_ms,
+            delta_commit_count,
+            olist_replay_rate_eps: None,
+            olist_high_watermark: None,
+            olist_consumer_lag: None,
+            iggy_status: Some("available".to_string()),
+            arroyo_status: Some("available".to_string()),
+            delta_status: Some("available".to_string()),
+            timestamp: Utc::now(),
+        }
+    }
+
+    pub fn with_iggy_fsync_latency_us(mut self, iggy_fsync_latency_us: i64) -> Self {
+        self.iggy_fsync_latency_us = Some(iggy_fsync_latency_us);
+        self
+    }
+
+    pub fn with_olist_metrics(
+        mut self,
+        replay_rate_eps: f64,
+        high_watermark: i64,
+        consumer_lag: i64,
+    ) -> Self {
+        self.olist_replay_rate_eps = Some(replay_rate_eps);
+        self.olist_high_watermark = Some(high_watermark);
+        self.olist_consumer_lag = Some(consumer_lag);
+        self
+    }
+
+    pub fn with_statuses(
+        mut self,
+        iggy_status: impl Into<String>,
+        arroyo_status: impl Into<String>,
+        delta_status: impl Into<String>,
+    ) -> Self {
+        self.iggy_status = Some(iggy_status.into());
+        self.arroyo_status = Some(arroyo_status.into());
+        self.delta_status = Some(delta_status.into());
+        self
+    }
 }

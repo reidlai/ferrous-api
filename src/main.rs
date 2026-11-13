@@ -87,7 +87,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app_state = AppState::with_session_context(publisher, jwt_validator, session_context);
     app_state.event_broadcaster.set_persistent_mode(true);
-    let event_broadcaster = Arc::clone(&app_state.event_broadcaster);
+    app_state.benchmark_broadcaster.set_persistent_mode(true);
+    app_state.pipeline_telemetry.set_persistent_mode(true);
+    app_state
+        .pipeline_telemetry
+        .set_collector_config(ferrous_api::PipelineCollectorConfig::from_env());
+    let _pipeline_poller = app_state
+        .pipeline_telemetry
+        .spawn_background_poller(ferrous_api::DEFAULT_PIPELINE_POLL_INTERVAL);
+    let shutdown_state = app_state.clone();
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let app = create_router_with_app_state(app_state);
@@ -98,14 +106,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(%addr, "Listening for HTTP connections");
 
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal(event_broadcaster))
+        .with_graceful_shutdown(shutdown_signal(shutdown_state))
         .await?;
 
     info!("FerrousCX Axum API Service shut down gracefully");
     Ok(())
 }
 
-async fn shutdown_signal(event_broadcaster: Arc<ferrous_api::EventStreamBroadcaster>) {
+async fn shutdown_signal(app_state: AppState) {
     let ctrl_c = async {
         signal::ctrl_c()
             .await
@@ -132,5 +140,7 @@ async fn shutdown_signal(event_broadcaster: Arc<ferrous_api::EventStreamBroadcas
         },
     }
 
-    event_broadcaster.cancel_all();
+    app_state.event_broadcaster.cancel_all();
+    app_state.benchmark_broadcaster.cancel_all();
+    app_state.pipeline_telemetry.cancel_all();
 }
