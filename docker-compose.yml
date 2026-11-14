@@ -1,0 +1,46 @@
+# ==============================================================================
+# FerrousCX API Gateway Standalone Docker Compose Manifest
+# Adheres strictly to Tier 2 DevSecOps standards (UID 10001 rootless, Day-0 hardening)
+# ==============================================================================
+
+services:
+  ferrous-api:
+    build:
+      context: ..
+      dockerfile: ferrous-api/Dockerfile
+    image: ferrous-api:latest
+    container_name: ferrous-api
+    user: "10001:10001"
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev,size=64M
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+    volumes:
+      - ${DELTA_HOST_DIR:-../data/delta}:/data/delta:ro
+    environment:
+      - PORT=${PORT:-8080}
+      - IGGY_SERVER_ADDRESS=${IGGY_SERVER_ADDRESS:-iggy-broker:8090}
+      - KANIDM_JWT_SECRET=${KANIDM_JWT_SECRET:-}
+      - KANIDM_ISSUER=${KANIDM_ISSUER:-https://iam.ferrouscx.local/oauth2/openid/svc_ferrous_api}
+      - DELTA_DATA_DIR=/data/delta
+      - DELTA_ORDERS_PATH=/data/delta/orders_current_state
+      - RUST_LOG=${RUST_LOG:-ferrous_api=info,tower_http=info}
+    healthcheck:
+      test: ["CMD", "/ferrous-api", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - ferrous-net
+
+networks:
+  ferrous-net:
+    name: ferrous-net
+    driver: bridge

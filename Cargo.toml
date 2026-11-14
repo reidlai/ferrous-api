@@ -1,0 +1,44 @@
+[package]
+name = "ferrous-api"
+version = "0.1.0"
+edition = "2021"
+authors = ["FerrousCX Contributors"]
+description = "Contract-First Axum API Service with Goa Design DSL and Native SSE"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "ferrous_api"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ferrous-api"
+path = "src/main.rs"
+
+[dependencies]
+ferrous-cqrses = { path = "../ferrous-cqrses" }
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1.40", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tokio-util = "0.7"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+uuid = { version = "1.10", features = ["v7", "v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2.0"
+async-trait = "0.1"
+futures = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+jsonwebtoken = { version = "11.1.0", features = ["aws_lc_rs"] }
+
+[dev-dependencies]
+http-body-util = "0.1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

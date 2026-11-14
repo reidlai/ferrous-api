@@ -1,0 +1,11 @@
+target/
+**/target/
+.git/
+**/.git/
+.github/
+**/.github/
+*.log
+*.tmp
+*.diff
+data/
+
