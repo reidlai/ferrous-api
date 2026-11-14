@@ -88,6 +88,8 @@ ferrous-api/
 ├── scripts/
 │   ├── audit-api.ps1            # Tier 1 local audit & scan gate (PowerShell, <3 min)
 │   ├── audit-api.sh             # Tier 1 local audit & scan gate (POSIX/Bash, <3 min)
+│   ├── build-and-scan.ps1       # Tier 2 Hadolint + Docker build + Trivy scan (PowerShell)
+│   ├── build-and-scan.sh        # Tier 2 Hadolint + Docker build + Trivy scan (POSIX/Bash)
 │   ├── generate-openapi.ps1/.sh # Executes/validates 'goa gen' -> gen/http/openapi3.json
 │   └── generate-axum.ps1/.sh    # Executes/validates 'openapi-generator' -> src/generated/
 ├── src/
@@ -108,16 +110,20 @@ ferrous-api/
 │   ├── sse.rs                   # EventStreamBroadcaster & CancellationToken abort guard
 │   ├── state.rs                 # Shared AppState wiring dependencies
 │   └── telemetry.rs             # BenchmarkTelemetryBroadcaster & PipelineTelemetryHub
-├── tests/                       # Integration & contract test suites (61 tests)
+├── tests/                       # Integration & contract test suites
 │   ├── test_auth_middleware.rs
 │   ├── test_command_ingestion.rs
 │   ├── test_generated_traits.rs
+│   ├── test_healthcheck_probe.rs
 │   ├── test_lakehouse_queries.rs
 │   ├── test_openapi_contract.rs
 │   ├── test_sse_cancellation.rs
 │   └── test_telemetry_streams.rs
+├── .dockerignore                # Excludes build artifacts and git metadata from image context
 ├── Cargo.toml                   # Crate manifest (depends on ../ferrous-cqrses)
 ├── Cargo.lock
+├── Dockerfile                   # Hardened multi-stage musl -> FROM scratch container (<50MB)
+├── docker-compose.yml           # Day-0 hardened standalone Compose manifest (UID 10001)
 ├── go.mod
 └── README.md
 ```
@@ -166,4 +172,28 @@ cargo run --bin ferrous-api
 ```bash
 pre-commit install
 pre-commit run --all-files
+```
+
+---
+
+## Container Packaging & Tier 2 Security Scan (AD-24)
+
+`ferrous-api` packages a statically linked `x86_64-unknown-linux-musl` binary into a rootless `FROM scratch` container (`<50MB`, `USER 10001:10001`) with no shell, package manager, or dynamic linker. Health checks use the embedded `/ferrous-api --healthcheck` CLI probe querying `GET /health/ready` on `127.0.0.1:${PORT:-8080}`.
+
+`docker-compose.yml` enforces Day-0 kernel hardening (`read_only: true`, `cap_drop: ["ALL"]`, `security_opt: ["no-new-privileges:true"]`, `tmpfs /tmp:noexec,nosuid,nodev,size=64M`) and mounts the Delta Lake directory read-only at `/data/delta` (`DELTA_DATA_DIR=/data/delta`, `DELTA_ORDERS_PATH=/data/delta/orders_current_state`).
+
+**Build & Scan (Windows PowerShell):**
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-and-scan.ps1
+# Dry-run or skip Trivy:
+powershell -ExecutionPolicy Bypass -File .\scripts\build-and-scan.ps1 -DryRun
+powershell -ExecutionPolicy Bypass -File .\scripts\build-and-scan.ps1 -SkipScan
+```
+
+**Build & Scan (Linux / macOS Bash):**
+```bash
+./scripts/build-and-scan.sh
+# Dry-run or skip Trivy:
+./scripts/build-and-scan.sh --dry-run
+./scripts/build-and-scan.sh --skip-scan
 ```
