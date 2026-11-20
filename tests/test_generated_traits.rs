@@ -24,12 +24,14 @@ fn valid_write_auth_header() -> String {
 
 #[tokio::test]
 async fn test_issue_credit_valid_payload_returns_202() {
-    let app = create_default_router();
+    let state = ferrous_api::state::AppState::default();
     let order_id = Uuid::now_v7().to_string();
+    state.seed_order(&order_id).await;
+    let app = ferrous_api::create_router_with_app_state(state);
 
     let request_body = serde_json::json!({
         "order_id": order_id,
-        "amount_cents": 2500,
+        "amount_cents": 1500,
         "reason": "Late arrival compensation"
     });
 
@@ -169,8 +171,10 @@ async fn test_issue_credit_negative_or_zero_amount_returns_422_rfc7807() {
 
 #[tokio::test]
 async fn test_cancel_order_valid_payload_returns_202() {
-    let app = create_default_router();
+    let state = ferrous_api::state::AppState::default();
     let order_id = Uuid::now_v7().to_string();
+    state.seed_order(&order_id).await;
+    let app = ferrous_api::create_router_with_app_state(state);
 
     let request_body = serde_json::json!({
         "order_id": order_id,

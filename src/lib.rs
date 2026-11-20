@@ -23,7 +23,7 @@ pub use lakehouse::{
 };
 pub use publisher::{
     IggyPublisher, InMemoryIggyPublisher, PublishedMessage, PublisherError, TcpIggyPublisher,
-    ORDERS_INTAKE_TOPIC,
+    ORDERS_EVENTS_TOPIC, ORDERS_INTAKE_TOPIC,
 };
 pub use sse::{
     AgentTaskHandle, EventStreamBroadcaster, EventStreamFilter, SseAbortGuard,

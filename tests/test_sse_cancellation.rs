@@ -439,6 +439,7 @@ async fn test_orders_command_handlers_broadcast_credit_issued_and_order_cancelle
     let (state, publisher, validator) = AppState::with_in_memory();
     let auth_header = issue_write_bearer(&validator);
     let order_id = Uuid::now_v7().to_string();
+    state.seed_order(&order_id).await;
 
     let app = create_router_with_app_state(state);
 
@@ -460,7 +461,7 @@ async fn test_orders_command_handlers_broadcast_credit_issued_and_order_cancelle
         .body(Body::from(
             json!({
                 "order_id": order_id,
-                "amount_cents": 3200,
+                "amount_cents": 1200,
                 "reason": "Expedited shipping delay refund"
             })
             .to_string(),
@@ -507,7 +508,7 @@ async fn test_orders_command_handlers_broadcast_credit_issued_and_order_cancelle
     assert_eq!(events[1].event_type, "CreditIssued");
     assert_eq!(events[1].event_id, credit_accepted.command_id);
     assert_eq!(events[1].aggregate_id, order_id);
-    assert_eq!(events[1].payload["amount_cents"], 3200);
+    assert_eq!(events[1].payload["amount_cents"], 1200);
     assert_eq!(
         events[1].payload["reason"],
         "Expedited shipping delay refund"

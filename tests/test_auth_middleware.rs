@@ -427,11 +427,11 @@ fn test_oauth2_space_delimited_scope_claim_is_normalized() {
 #[tokio::test]
 async fn test_end_to_end_authenticated_credit_command_passes_pep() {
     let (state, publisher, validator) = AppState::with_in_memory();
-    let app = create_router_with_app_state(state);
-
     let claims = Claims::new("svc_ferrous_api").with_scope(SCOPE_API_WRITE);
     let token = validator.issue_token(&claims).unwrap();
     let order_id = Uuid::now_v7().to_string();
+    state.seed_order(&order_id).await;
+    let app = create_router_with_app_state(state);
 
     let payload = json!({
         "order_id": order_id,
