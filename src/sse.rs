@@ -549,6 +549,11 @@ impl EventStreamBroadcaster {
             .unwrap_or(false)
     }
 
+    /// Subscribes directly to raw broadcast events emitted by this broadcaster.
+    pub fn subscribe(&self) -> broadcast::Receiver<DomainEventStreamItem> {
+        self.inner.sender.subscribe()
+    }
+
     /// Publishes a [`DomainEventStreamItem`] to all active SSE subscribers.
     ///
     /// Returns the number of active subscribers that received the broadcast (`0` when no

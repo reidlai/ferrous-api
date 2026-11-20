@@ -70,7 +70,11 @@ impl Claims {
 
     /// Checks whether the token possesses the specified scope.
     pub fn has_scope(&self, scope: &str) -> bool {
-        self.scopes.iter().any(|s| s == scope)
+        self.scopes.iter().any(|s| {
+            s == scope
+                || (scope == SCOPE_API_WRITE && s == "write:orders")
+                || (scope == "write:orders" && s == SCOPE_API_WRITE)
+        })
     }
 
     /// Checks whether the token possesses the specified group.
