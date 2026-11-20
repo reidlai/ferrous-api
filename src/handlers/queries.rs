@@ -10,7 +10,7 @@ use crate::generated::{
     ApiError, Claims, GetOrderResponse, ListOrdersParams, ListOrdersResponse, ProblemDetails,
     QueriesApi, ValidatePayload,
 };
-use crate::lakehouse::SessionContext;
+use crate::query_engine::SessionContext;
 use crate::state::AppState;
 
 /// Pure-Rust implementation of `QueriesApi` server trait backed by an embedded
