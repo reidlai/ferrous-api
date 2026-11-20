@@ -4,6 +4,7 @@
 //! Single source of truth driven by Goa Design v3 DSL and OpenAPI 3.0 specification.
 
 pub mod auth;
+pub mod callback;
 pub mod generated;
 pub mod handlers;
 pub mod lakehouse;
@@ -13,6 +14,10 @@ pub mod state;
 pub mod telemetry;
 
 pub use auth::{AuthError, JwtValidator, RequireScope, SCOPE_API_READ, SCOPE_API_WRITE};
+pub use callback::{
+    CallbackError, CallbackOutcome, CallbackService, SettlementCallbackMessage, SettlementStatus,
+    CALLBACKS_CONSUMER_GROUP, CALLBACKS_TOPIC,
+};
 pub use generated::*;
 pub use handlers::*;
 pub use lakehouse::{
@@ -132,28 +137,15 @@ pub fn create_default_router() -> Router {
 }
 
 /// Creates Axum router wired to a shared [`AppState`] with Kanidm Tower PEP middleware
-/// mounted on `/api/v1/commands` and `/api/v1/webhooks` routes, `Arc<SessionContext>` wired into `QueriesHandler`,
+/// mounted on `/api/v1/commands` routes, `Arc<SessionContext>` wired into `QueriesHandler`,
 /// and `Arc<EventStreamBroadcaster>` wired into `StreamsHandler` and `OrdersHandler`.
 pub fn create_router_with_app_state(app_state: AppState) -> Router {
     let orders = Arc::new(OrdersHandler::with_state(app_state.clone()));
     let queries = Arc::new(QueriesHandler::with_state(app_state.clone()));
     let streams = Arc::new(StreamsHandler::with_state(app_state.clone()));
 
-    let webhook_router = Router::new()
-        .route(
-            "/api/v1/webhooks/orders/settlement-callback",
-            axum::routing::post(handlers::webhooks::handle_settlement_callback),
-        )
-        .with_state(app_state.clone());
-
     let api_state = ApiState::new(orders, queries, streams);
     build_api_router(api_state)
-        .merge(webhook_router)
-        .layer(RequireScope::for_path_prefix(
-            app_state.jwt_validator.clone(),
-            "/api/v1/webhooks",
-            SCOPE_API_WRITE,
-        ))
         .layer(RequireScope::for_path_prefix(
             app_state.jwt_validator,
             "/api/v1/commands",
@@ -164,21 +156,7 @@ pub fn create_router_with_app_state(app_state: AppState) -> Router {
 
 /// Creates Axum router configured with a custom [`ApiState`] and default Kanidm PEP middleware.
 pub fn create_router_with_state(state: ApiState) -> Router {
-    let default_app_state = AppState::default();
-    let webhook_router = Router::new()
-        .route(
-            "/api/v1/webhooks/orders/settlement-callback",
-            axum::routing::post(handlers::webhooks::handle_settlement_callback),
-        )
-        .with_state(default_app_state);
-
     build_api_router(state)
-        .merge(webhook_router)
-        .layer(RequireScope::for_path_prefix(
-            Arc::new(JwtValidator::default()),
-            "/api/v1/webhooks",
-            SCOPE_API_WRITE,
-        ))
         .layer(RequireScope::for_path_prefix(
             Arc::new(JwtValidator::default()),
             "/api/v1/commands",
