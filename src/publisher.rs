@@ -13,6 +13,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use ferrous_cqrses::commands::OrderCommand;
+use ferrous_cqrses::events::DomainEvent;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
@@ -25,6 +26,9 @@ use crate::generated::models::ProblemDetails;
 
 /// Canonical Apache Iggy WAL stream/topic path for order mutation commands.
 pub const ORDERS_INTAKE_TOPIC: &str = "orders/intake";
+
+/// Canonical Apache Iggy topic path for committed domain events.
+pub const ORDERS_EVENTS_TOPIC: &str = "orders/events";
 
 /// Errors occurring during command serialization or Apache Iggy WAL publication.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -75,9 +79,14 @@ impl PublishedMessage {
     pub fn decode_command(&self) -> Result<OrderCommand, serde_json::Error> {
         serde_json::from_slice(&self.payload)
     }
+
+    /// Deserializes the raw message payload back into a strongly typed [`DomainEvent`].
+    pub fn decode_event(&self) -> Result<DomainEvent, serde_json::Error> {
+        serde_json::from_slice(&self.payload)
+    }
 }
 
-/// Abstraction for publishing strongly typed [`OrderCommand`] events to Apache Iggy WAL.
+/// Abstraction for publishing strongly typed [`OrderCommand`] and [`DomainEvent`] events to Apache Iggy WAL.
 #[async_trait]
 pub trait IggyPublisher: Send + Sync + std::fmt::Debug {
     /// Publishes raw serialized command bytes to the specified topic and partition key.
@@ -98,6 +107,20 @@ pub trait IggyPublisher: Send + Sync + std::fmt::Debug {
             ORDERS_INTAKE_TOPIC,
             command.order_id(),
             command.command_id(),
+            payload,
+        )
+        .await
+    }
+
+    /// Serializes a [`DomainEvent`] and publishes it to `orders/events` partitioned strictly by `order_id`.
+    async fn publish_event(&self, event: &DomainEvent) -> Result<(), PublisherError> {
+        let payload = serde_json::to_vec(event)
+            .map_err(|e| PublisherError::Serialization(e.to_string()))?;
+
+        self.publish_raw(
+            ORDERS_EVENTS_TOPIC,
+            event.order_id(),
+            event.event_id(),
             payload,
         )
         .await

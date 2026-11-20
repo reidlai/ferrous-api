@@ -4,6 +4,8 @@
 
 use std::sync::Arc;
 
+use ferrous_cqrses::handler::CommandHandler;
+
 use crate::auth::JwtValidator;
 use crate::lakehouse::SessionContext;
 use crate::publisher::{IggyPublisher, InMemoryIggyPublisher};
@@ -12,10 +14,12 @@ use crate::telemetry::{BenchmarkTelemetryBroadcaster, PipelineTelemetryHub};
 
 /// Shared gateway application state containing the `IggyPublisher`, `JwtValidator`,
 /// embedded in-process `Arc<SessionContext>`, SSE `Arc<EventStreamBroadcaster>`,
-/// `Arc<BenchmarkTelemetryBroadcaster>`, and `Arc<PipelineTelemetryHub>`.
+/// `Arc<BenchmarkTelemetryBroadcaster>`, `Arc<PipelineTelemetryHub>`, and
+/// synchronous CQRS/ES `Arc<Mutex<CommandHandler>>`.
 #[derive(Clone, Debug)]
 pub struct AppState {
-    /// Apache Iggy WAL publisher for dispatching `OrderCommand` events to `orders/intake`.
+    /// Apache Iggy WAL publisher for dispatching `OrderCommand` events to `orders/intake`
+    /// and committed `DomainEvent`s to `orders/events`.
     pub publisher: Arc<dyn IggyPublisher>,
     /// Kanidm PEP JWT validator backed by an in-memory JWKS cache.
     pub jwt_validator: Arc<JwtValidator>,
@@ -27,6 +31,8 @@ pub struct AppState {
     pub benchmark_broadcaster: Arc<BenchmarkTelemetryBroadcaster>,
     /// Read-only multi-source pipeline telemetry hub (`GET /api/v1/telemetry/pipeline/stream`).
     pub pipeline_telemetry: Arc<PipelineTelemetryHub>,
+    /// Synchronous command handler backed by SierraDB / in-memory event store.
+    pub command_handler: Arc<tokio::sync::Mutex<CommandHandler>>,
 }
 
 impl Default for AppState {
@@ -42,7 +48,7 @@ impl Default for AppState {
 impl AppState {
     /// Creates a new `AppState` from an `IggyPublisher` and `JwtValidator`, initializing
     /// a default in-process `SessionContext`, `EventStreamBroadcaster`, `BenchmarkTelemetryBroadcaster`,
-    /// and `PipelineTelemetryHub`.
+    /// `PipelineTelemetryHub`, and in-memory `CommandHandler`.
     pub fn new(publisher: Arc<dyn IggyPublisher>, jwt_validator: Arc<JwtValidator>) -> Self {
         Self {
             publisher,
@@ -51,6 +57,7 @@ impl AppState {
             event_broadcaster: Arc::new(EventStreamBroadcaster::new()),
             benchmark_broadcaster: Arc::new(BenchmarkTelemetryBroadcaster::new()),
             pipeline_telemetry: Arc::new(PipelineTelemetryHub::new()),
+            command_handler: Arc::new(tokio::sync::Mutex::new(CommandHandler::new())),
         }
     }
 
@@ -67,6 +74,25 @@ impl AppState {
             event_broadcaster: Arc::new(EventStreamBroadcaster::new()),
             benchmark_broadcaster: Arc::new(BenchmarkTelemetryBroadcaster::new()),
             pipeline_telemetry: Arc::new(PipelineTelemetryHub::new()),
+            command_handler: Arc::new(tokio::sync::Mutex::new(CommandHandler::new())),
+        }
+    }
+
+    /// Creates a new `AppState` with an explicit `Arc<Mutex<CommandHandler>>`.
+    pub fn with_command_handler(
+        publisher: Arc<dyn IggyPublisher>,
+        jwt_validator: Arc<JwtValidator>,
+        session_context: Arc<SessionContext>,
+        command_handler: Arc<tokio::sync::Mutex<CommandHandler>>,
+    ) -> Self {
+        Self {
+            publisher,
+            jwt_validator,
+            session_context,
+            event_broadcaster: Arc::new(EventStreamBroadcaster::new()),
+            benchmark_broadcaster: Arc::new(BenchmarkTelemetryBroadcaster::new()),
+            pipeline_telemetry: Arc::new(PipelineTelemetryHub::new()),
+            command_handler,
         }
     }
 
@@ -83,6 +109,7 @@ impl AppState {
             event_broadcaster,
             benchmark_broadcaster: Arc::new(BenchmarkTelemetryBroadcaster::new()),
             pipeline_telemetry: Arc::new(PipelineTelemetryHub::new()),
+            command_handler: Arc::new(tokio::sync::Mutex::new(CommandHandler::new())),
         }
     }
 
@@ -118,6 +145,7 @@ impl AppState {
             event_broadcaster: Arc::clone(&broadcaster),
             benchmark_broadcaster,
             pipeline_telemetry,
+            command_handler: Arc::new(tokio::sync::Mutex::new(CommandHandler::new())),
         };
         (state, publisher, validator, broadcaster)
     }
@@ -134,5 +162,20 @@ impl AppState {
             session_context,
         );
         (state, publisher, validator)
+    }
+
+    /// Seeds an order aggregate in state cache and underlying store (useful for testing states).
+    pub async fn seed_order(&self, order_id: &str) {
+        let mut handler = self.command_handler.lock().await;
+        let _ = handler
+            .handle_command(ferrous_cqrses::commands::OrderCommand::CreateOrder(
+                ferrous_cqrses::commands::CreateOrderCommand::new(
+                    order_id,
+                    "cust-default",
+                    1500,
+                    chrono::Utc::now(),
+                ),
+            ))
+            .await;
     }
 }

@@ -10,6 +10,7 @@ use ferrous_api::{
     InMemoryIggyPublisher, JwtValidator, SessionContext, TcpIggyPublisher,
     DEFAULT_DELTA_ORDERS_PATH, ORDERS_CURRENT_STATE_TABLE,
 };
+use ferrous_cqrses::handler::CommandHandler;
 use tokio::signal;
 use tracing::{info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -97,7 +98,24 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    let app_state = AppState::with_session_context(publisher, jwt_validator, session_context);
+    let sierradb_url = std::env::var("SIERRADB_URL")
+        .unwrap_or_else(|_| "127.0.0.1:9090".to_string());
+    let command_handler = match CommandHandler::connect_sierra(&sierradb_url).await {
+        Ok(h) => {
+            info!(sierradb_url = %sierradb_url, "Connected to SierraDB event store");
+            Arc::new(tokio::sync::Mutex::new(h))
+        }
+        Err(e) => {
+            warn!(
+                sierradb_url = %sierradb_url,
+                error = %e,
+                "SierraDB connection failed; initializing CommandHandler with in-memory event store"
+            );
+            Arc::new(tokio::sync::Mutex::new(CommandHandler::new()))
+        }
+    };
+
+    let app_state = AppState::with_command_handler(publisher, jwt_validator, session_context, command_handler);
     app_state.event_broadcaster.set_persistent_mode(true);
     app_state.benchmark_broadcaster.set_persistent_mode(true);
     app_state.pipeline_telemetry.set_persistent_mode(true);
