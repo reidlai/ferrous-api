@@ -178,4 +178,74 @@ impl AppState {
             ))
             .await;
     }
+
+    /// Creates a configured [`ferrous_cqrses::callback::CallbackService`] instance wired to this
+    /// `AppState`'s command handler, publisher (`orders/events`), and SSE broadcaster.
+    pub fn callback_service(&self) -> ferrous_cqrses::callback::CallbackService {
+        let broadcaster = self.event_broadcaster.clone();
+        let publisher_adapter = Arc::new(IggyCallbackPublisherAdapter(self.publisher.clone()));
+        ferrous_cqrses::callback::CallbackService::new(self.command_handler.clone())
+            .with_publisher(publisher_adapter)
+            .with_events_topic(crate::publisher::ORDERS_EVENTS_TOPIC)
+            .with_event_listener(move |event, command_id| {
+                let (event_type, payload_json) = match event {
+                    ferrous_cqrses::events::DomainEvent::CourtesyCreditSettled(e) => (
+                        "CourtesyCreditSettled",
+                        serde_json::json!({
+                            "command_id": command_id,
+                            "order_id": e.order_id,
+                            "amount_cents": e.amount_cents,
+                            "transaction_ref": e.transaction_ref,
+                            "settled_at": e.settled_at,
+                        }),
+                    ),
+                    ferrous_cqrses::events::DomainEvent::CourtesyCreditSettlementFailed(e) => (
+                        "CourtesyCreditSettlementFailed",
+                        serde_json::json!({
+                            "command_id": command_id,
+                            "order_id": e.order_id,
+                            "amount_cents": e.amount_cents,
+                            "reason": e.reason,
+                            "failed_at": e.failed_at,
+                        }),
+                    ),
+                    _ => return,
+                };
+
+                let _ = broadcaster.publish(crate::generated::models::DomainEventStreamItem {
+                    event_id: *command_id,
+                    event_type: event_type.to_string(),
+                    aggregate_id: event.order_id().to_string(),
+                    payload: payload_json,
+                    timestamp: event.timestamp(),
+                });
+            })
+    }
+}
+
+/// Adapter converting `Arc<dyn IggyPublisher>` into `ferrous_cqrses::callback::CallbackPublisher`.
+struct IggyCallbackPublisherAdapter(Arc<dyn IggyPublisher>);
+
+#[async_trait::async_trait]
+impl ferrous_cqrses::callback::CallbackPublisher for IggyCallbackPublisherAdapter {
+    async fn publish_domain_event(
+        &self,
+        _topic: &str,
+        _partition_key: &str,
+        event: &ferrous_cqrses::events::DomainEvent,
+    ) -> Result<(), String> {
+        self.0.publish_event(event).await.map_err(|e| e.to_string())
+    }
+}
+
+impl From<AppState> for ferrous_cqrses::callback::CallbackService {
+    fn from(state: AppState) -> Self {
+        state.callback_service()
+    }
+}
+
+impl From<&AppState> for ferrous_cqrses::callback::CallbackService {
+    fn from(state: &AppState) -> Self {
+        state.callback_service()
+    }
 }
