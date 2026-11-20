@@ -4,7 +4,7 @@
 //! Single source of truth driven by Goa Design v3 DSL and OpenAPI 3.0 specification.
 
 pub mod auth;
-pub mod callback;
+pub use ferrous_cqrses::callback;
 pub mod generated;
 pub mod handlers;
 pub mod publisher;
@@ -15,9 +15,9 @@ pub mod state;
 pub mod telemetry;
 
 pub use auth::{AuthError, JwtValidator, RequireScope, SCOPE_API_READ, SCOPE_API_WRITE};
-pub use callback::{
-    CallbackError, CallbackOutcome, CallbackService, SettlementCallbackMessage, SettlementStatus,
-    CALLBACKS_CONSUMER_GROUP, CALLBACKS_TOPIC,
+pub use ferrous_cqrses::callback::{
+    CallbackError, CallbackOutcome, CallbackPublisher, CallbackService, EventListener,
+    SettlementCallbackMessage, SettlementStatus, CALLBACKS_CONSUMER_GROUP, CALLBACKS_TOPIC,
 };
 pub use generated::*;
 pub use handlers::*;

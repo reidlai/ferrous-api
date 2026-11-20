@@ -103,9 +103,8 @@ ferrous-api/
 │   │   ├── streams.rs           # Implements StreamsApi (SSE & telemetry streams)
 │   │   └── mod.rs
 │   ├── auth.rs                  # Kanidm JWT PEP middleware, RequireScope & JWKS cache
-│   ├── callback.rs              # Asynchronous CallbackService consuming orders/callbacks
 │   ├── query_engine.rs          # Embedded DataFusion SessionContext, DeltaTableProvider (Read-Only) & federation
-│   ├── lib.rs                   # Library exports & router assembly helpers
+│   ├── lib.rs                   # Library exports (re-exports ferrous-cqrses::callback) & router assembly helpers
 │   ├── main.rs                  # Axum HTTP server bootstrap (:8080)
 │   ├── publisher.rs             # IggyPublisher trait, InMemoryIggyPublisher & TcpIggyPublisher
 │   ├── sse.rs                   # EventStreamBroadcaster & CancellationToken abort guard

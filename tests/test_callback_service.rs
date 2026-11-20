@@ -53,7 +53,7 @@ async fn test_successful_credit_settlement_callback() {
     // Subscribe to SSE broadcaster before processing callback
     let mut sse_rx = state.event_broadcaster.subscribe();
 
-    let callback_service = CallbackService::new(state.clone());
+    let callback_service: CallbackService = state.clone().into();
     let message = SettlementCallbackMessage {
         order_id: order_id.clone(),
         amount_cents: 1500,
@@ -128,7 +128,7 @@ async fn test_settlement_failure_callback() {
 
     let mut sse_rx = state.event_broadcaster.subscribe();
 
-    let callback_service = CallbackService::new(state.clone());
+    let callback_service: CallbackService = state.clone().into();
     let message = SettlementCallbackMessage {
         order_id: order_id.clone(),
         amount_cents: 1500,
@@ -201,7 +201,7 @@ async fn test_excessive_settlement_amount_rejected() {
             .unwrap();
     }
 
-    let callback_service = CallbackService::new(state.clone());
+    let callback_service: CallbackService = state.clone().into();
     // Attempting to settle 2500 cents (exceeds $10)
     let message = SettlementCallbackMessage {
         order_id: order_id.clone(),
@@ -236,7 +236,7 @@ async fn test_nonexistent_order_rejected() {
     let (state, publisher, _validator) = AppState::with_in_memory();
     let non_existent_order_id = Uuid::now_v7().to_string();
 
-    let callback_service = CallbackService::new(state);
+    let callback_service: CallbackService = state.clone().into();
     let message = SettlementCallbackMessage {
         order_id: non_existent_order_id.clone(),
         amount_cents: 1500,
@@ -259,7 +259,7 @@ async fn test_nonexistent_order_rejected() {
 #[tokio::test]
 async fn test_malformed_callback_payload_rejected() {
     let (state, publisher, _validator) = AppState::with_in_memory();
-    let callback_service = CallbackService::new(state);
+    let callback_service: CallbackService = state.clone().into();
 
     // 1. Blank order_id
     let msg1 = SettlementCallbackMessage {
@@ -361,7 +361,7 @@ async fn test_idempotent_duplicate_settlement_callback_acknowledged() {
             .unwrap();
     }
 
-    let callback_service = CallbackService::new(state.clone());
+    let callback_service: CallbackService = state.clone().into();
     let message = SettlementCallbackMessage {
         order_id: order_id.clone(),
         amount_cents: 500,
@@ -436,7 +436,7 @@ async fn test_settlement_on_cancelled_order_rejected() {
             .unwrap();
     }
 
-    let callback_service = CallbackService::new(state);
+    let callback_service: CallbackService = state.clone().into();
     let message = SettlementCallbackMessage {
         order_id: order_id.clone(),
         amount_cents: 500,
@@ -473,7 +473,7 @@ async fn test_settlement_on_fraud_locked_order_rejected() {
         handler.insert_aggregate(agg);
     }
 
-    let callback_service = CallbackService::new(state);
+    let callback_service: CallbackService = state.clone().into();
     let message = SettlementCallbackMessage {
         order_id: order_id.clone(),
         amount_cents: 500,
@@ -510,7 +510,7 @@ async fn test_iggy_publish_failure_rolls_back_sierradb() {
             .unwrap();
     }
 
-    let callback_service = CallbackService::new(state.clone());
+    let callback_service: CallbackService = state.clone().into();
     let message = SettlementCallbackMessage {
         order_id: order_id.clone(),
         amount_cents: 1000,
@@ -550,7 +550,7 @@ async fn test_raw_json_message_bytes_processing() {
             .unwrap();
     }
 
-    let callback_service = CallbackService::new(state.clone());
+    let callback_service: CallbackService = state.clone().into();
     let raw_payload = json!({
         "order_id": order_id,
         "amount_cents": 1200,
