@@ -1,10 +1,13 @@
-//! Embedded in-process Apache DataFusion (`Arc<SessionContext>`) & vectorized SQL lakehouse engine.
+//! Embedded in-process Apache DataFusion (`Arc<SessionContext>`) & vectorized SQL read query engine.
 //!
 //! Provides a pure-Rust, zero-IPC analytical query engine over Delta Lake storage
 //! (`delta/orders_current_state`) with `_delta_log` transaction log inspection,
 //! contiguous columnar memory buffers for <3ms p95 scans/aggregations over 100,000 records,
 //! and extensible `TableProvider` federation for joining Delta Lake tables with operational
 //! SQLite/Postgres-backed table providers in a single query execution plan.
+//!
+//! Note: This engine is strictly READ-ONLY. Delta Lake writes and projection mutations are
+//! performed asynchronously by the projection tier (`ferrous-cqrses` and `ferrous-cx/delta_sink`).
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -30,6 +33,9 @@ pub const OPERATIONAL_DISPUTES_TABLE: &str = "operational_disputes";
 
 /// Default filesystem path for the `orders_current_state` Delta Lake table.
 pub const DEFAULT_DELTA_ORDERS_PATH: &str = "delta/orders_current_state";
+
+/// Backward-compatible alias for [`LakehouseError`].
+pub type QueryEngineError = LakehouseError;
 
 /// Strongly typed errors returned by the in-process Lakehouse & `SessionContext` engine.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -1743,41 +1749,4 @@ fn extract_sql_usize(clause: &str, keyword: &str) -> Result<Option<usize>, Lakeh
         LakehouseError::InvalidQuery(format!("Invalid numeric value '{num_str}' for {keyword}"))
     })?;
     Ok(Some(parsed))
-}
-
-/// Helper utility to write a valid Delta Lake directory (`_delta_log/00000000000000000000.json`
-/// plus snapshot data file) for testing and local bootstrapping.
-pub fn write_delta_table_snapshot(
-    table_dir: impl AsRef<Path>,
-    records: &[OrderRecord],
-) -> Result<DeltaLogMetadata, LakehouseError> {
-    let dir = table_dir.as_ref();
-    let delta_log_dir = dir.join("_delta_log");
-    fs::create_dir_all(&delta_log_dir).map_err(|e| LakehouseError::StorageIo(e.to_string()))?;
-
-    let data_file_name = "part-00000-orders-snapshot.json";
-    let data_file_path = dir.join(data_file_name);
-    let data_json =
-        serde_json::to_string(records).map_err(|e| LakehouseError::StorageIo(e.to_string()))?;
-    fs::write(&data_file_path, data_json.as_bytes())
-        .map_err(|e| LakehouseError::StorageIo(e.to_string()))?;
-
-    let commit_path = delta_log_dir.join("00000000000000000000.json");
-    let commit_lines = format!(
-        "{{\"protocol\":{{\"minReaderVersion\":1,\"minWriterVersion\":2}}}}\n\
-         {{\"metaData\":{{\"id\":\"delta-orders-current-state\",\"name\":\"orders_current_state\",\"schemaString\":\"{{\\\"type\\\":\\\"struct\\\"}}\"}}}}\n\
-         {{\"add\":{{\"path\":\"{data_file_name}\",\"size\":{},\"modificationTime\":1730000000000,\"dataChange\":true}}}}\n",
-        data_json.len()
-    );
-    fs::write(&commit_path, commit_lines.as_bytes())
-        .map_err(|e| LakehouseError::StorageIo(e.to_string()))?;
-
-    Ok(DeltaLogMetadata {
-        version: 0,
-        table_id: Some("delta-orders-current-state".to_string()),
-        min_reader_version: 1,
-        min_writer_version: 2,
-        active_files: vec![data_file_name.to_string()],
-        commit_files_count: 1,
-    })
 }

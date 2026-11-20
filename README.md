@@ -23,7 +23,7 @@ flowchart LR
         CMD["OrdersHandler<br/>(src/handlers/orders.rs)"]
         PUB["IggyPublisher<br/>(src/publisher.rs)"]
         QRY["QueriesHandler<br/>(src/handlers/queries.rs)"]
-        LH["In-Process Lakehouse<br/>(src/lakehouse.rs: SessionContext + TableProvider)"]
+        LH["In-Process Query Engine<br/>(src/query_engine.rs: SessionContext + TableProvider)"]
         STR["StreamsHandler<br/>(src/handlers/streams.rs)"]
         SSE["SSE & Telemetry Hubs<br/>(src/sse.rs + src/telemetry.rs + CancellationToken)"]
     end
@@ -103,7 +103,8 @@ ferrous-api/
 │   │   ├── streams.rs           # Implements StreamsApi (SSE & telemetry streams)
 │   │   └── mod.rs
 │   ├── auth.rs                  # Kanidm JWT PEP middleware, RequireScope & JWKS cache
-│   ├── lakehouse.rs             # Embedded SessionContext, DeltaTableProvider & federation
+│   ├── callback.rs              # Asynchronous CallbackService consuming orders/callbacks
+│   ├── query_engine.rs          # Embedded DataFusion SessionContext, DeltaTableProvider (Read-Only) & federation
 │   ├── lib.rs                   # Library exports & router assembly helpers
 │   ├── main.rs                  # Axum HTTP server bootstrap (:8080)
 │   ├── publisher.rs             # IggyPublisher trait, InMemoryIggyPublisher & TcpIggyPublisher
@@ -112,11 +113,12 @@ ferrous-api/
 │   └── telemetry.rs             # BenchmarkTelemetryBroadcaster & PipelineTelemetryHub
 ├── tests/                       # Integration & contract test suites
 │   ├── test_auth_middleware.rs
+│   ├── test_callback_service.rs
 │   ├── test_command_ingestion.rs
 │   ├── test_generated_traits.rs
 │   ├── test_healthcheck_probe.rs
-│   ├── test_lakehouse_queries.rs
 │   ├── test_openapi_contract.rs
+│   ├── test_query_engine.rs
 │   ├── test_sse_cancellation.rs
 │   └── test_telemetry_streams.rs
 ├── .dockerignore                # Excludes build artifacts and git metadata from image context

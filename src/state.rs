@@ -7,7 +7,7 @@ use std::sync::Arc;
 use ferrous_cqrses::handler::CommandHandler;
 
 use crate::auth::JwtValidator;
-use crate::lakehouse::SessionContext;
+use crate::query_engine::SessionContext;
 use crate::publisher::{IggyPublisher, InMemoryIggyPublisher};
 use crate::sse::EventStreamBroadcaster;
 use crate::telemetry::{BenchmarkTelemetryBroadcaster, PipelineTelemetryHub};

@@ -12,12 +12,12 @@ use axum::{
 use ferrous_api::{
     create_router_with_app_state,
     generated::models::{ListOrdersParams, OrderDetails, OrderListResponse, ProblemDetails},
-    lakehouse::{
-        write_delta_table_snapshot, DeltaTableProvider, LakehouseError, OperationalDisputeRecord,
-        OrderRecord, SessionContext, SqlQueryResult, OPERATIONAL_DISPUTES_TABLE,
-        ORDERS_CURRENT_STATE_TABLE,
+    query_engine::{
+        DeltaTableProvider, LakehouseError, OperationalDisputeRecord, OrderRecord, SessionContext,
+        SqlQueryResult, OPERATIONAL_DISPUTES_TABLE, ORDERS_CURRENT_STATE_TABLE,
     },
     state::AppState,
+    write_delta_table_snapshot,
 };
 use http_body_util::BodyExt;
 use tower::ServiceExt;

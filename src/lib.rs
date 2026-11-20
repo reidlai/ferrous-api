@@ -7,8 +7,9 @@ pub mod auth;
 pub mod callback;
 pub mod generated;
 pub mod handlers;
-pub mod lakehouse;
 pub mod publisher;
+pub mod query_engine;
+pub use query_engine as lakehouse;
 pub mod sse;
 pub mod state;
 pub mod telemetry;
@@ -20,12 +21,13 @@ pub use callback::{
 };
 pub use generated::*;
 pub use handlers::*;
-pub use lakehouse::{
-    write_delta_table_snapshot, DeltaLogMetadata, DeltaTableProvider, FederatedOrderDisputeRow,
-    LakehouseError, OperationalDisputeRecord, OperationalTableProvider, OrderRecord,
+pub use query_engine::{
+    DeltaLogMetadata, DeltaTableProvider, FederatedOrderDisputeRow, LakehouseError,
+    OperationalDisputeRecord, OperationalTableProvider, OrderRecord, QueryEngineError,
     SessionContext, SqlQueryResult, StatusAggregation, TableProvider, DEFAULT_DELTA_ORDERS_PATH,
     OPERATIONAL_DISPUTES_TABLE, ORDERS_CURRENT_STATE_TABLE,
 };
+pub use ferrous_cqrses::write_delta_table_snapshot;
 pub use publisher::{
     IggyPublisher, InMemoryIggyPublisher, PublishedMessage, PublisherError, TcpIggyPublisher,
     ORDERS_EVENTS_TOPIC, ORDERS_INTAKE_TOPIC,
