@@ -20,13 +20,17 @@ pub use ferrous_cqrses::callback::{
     CallbackService, EventListener, SettlementCallbackMessage, SettlementStatus,
     CALLBACKS_CONSUMER_GROUP, CALLBACKS_TOPIC, CALLBACK_TOPIC,
 };
+pub use ferrous_cqrses::queries::{
+    GetOrderQuery, ListOrdersQuery, DEFAULT_LIST_ORDERS_LIMIT, MAX_LIST_ORDERS_LIMIT,
+};
 pub use generated::*;
 pub use handlers::*;
 pub use query_engine::{
-    DeltaLogMetadata, DeltaTableProvider, FederatedOrderDisputeRow, LakehouseError,
-    OperationalDisputeRecord, OperationalTableProvider, OrderRecord, QueryEngineError,
-    SessionContext, SqlQueryResult, StatusAggregation, TableProvider, DEFAULT_DELTA_ORDERS_PATH,
-    OPERATIONAL_DISPUTES_TABLE, ORDERS_CURRENT_STATE_TABLE,
+    DataFusionOrderQueryEngine, DeltaLogMetadata, DeltaTableProvider, FederatedOrderDisputeRow,
+    InMemoryOrderQueryEngine, LakehouseError, OperationalDisputeRecord, OperationalTableProvider,
+    OrderQueryEngine, OrderRecord, QueryEngineError, SessionContext, SqlQueryResult,
+    StatusAggregation, TableProvider, DEFAULT_DELTA_ORDERS_PATH, OPERATIONAL_DISPUTES_TABLE,
+    ORDERS_CURRENT_STATE_TABLE,
 };
 pub use ferrous_cqrses::write_delta_table_snapshot;
 pub use publisher::{

@@ -1750,3 +1750,247 @@ fn extract_sql_usize(clause: &str, keyword: &str) -> Result<Option<usize>, Lakeh
     })?;
     Ok(Some(parsed))
 }
+
+// ============================================================================
+// Pure CQRS/ES OrderQueryEngine Trait & Dual Backends (AD-30, AD-31, AD-32)
+// ============================================================================
+
+/// Pure read-only CQRS Query Engine trait for the Order bounded context (AD-31).
+///
+/// Decouples HTTP/Query handlers from storage mechanics so unit tests can run
+/// against [`InMemoryOrderQueryEngine`] while live runtimes execute vectorized
+/// Delta Lake scans via [`DataFusionOrderQueryEngine`] with `_delta_log`
+/// version-checked reloads.
+#[async_trait::async_trait]
+pub trait OrderQueryEngine: Send + Sync + Debug {
+    /// Executes a [`ferrous_cqrses::queries::GetOrderQuery`] against materialized order views.
+    async fn get_order(
+        &self,
+        query: &ferrous_cqrses::queries::GetOrderQuery,
+    ) -> Result<Option<OrderDetails>, QueryEngineError>;
+
+    /// Executes a [`ferrous_cqrses::queries::ListOrdersQuery`] against materialized order views.
+    async fn list_orders(
+        &self,
+        query: &ferrous_cqrses::queries::ListOrdersQuery,
+    ) -> Result<OrderListResponse, QueryEngineError>;
+
+    /// Returns the currently loaded `_delta_log` version when backed by Delta Lake.
+    fn current_delta_version(&self) -> Option<u64> {
+        None
+    }
+}
+
+/// Fast, zero-I/O in-memory [`OrderQueryEngine`] backend for unit tests (AD-31).
+#[derive(Debug, Clone)]
+pub struct InMemoryOrderQueryEngine {
+    session_context: Arc<SessionContext>,
+}
+
+impl Default for InMemoryOrderQueryEngine {
+    fn default() -> Self {
+        Self::new(Arc::new(SessionContext::default()))
+    }
+}
+
+impl InMemoryOrderQueryEngine {
+    /// Wraps an existing `Arc<SessionContext>` as an [`OrderQueryEngine`].
+    pub fn new(session_context: Arc<SessionContext>) -> Self {
+        Self { session_context }
+    }
+
+    /// Returns a reference to the underlying `Arc<SessionContext>`.
+    pub fn session_context(&self) -> &Arc<SessionContext> {
+        &self.session_context
+    }
+}
+
+#[async_trait::async_trait]
+impl OrderQueryEngine for InMemoryOrderQueryEngine {
+    async fn get_order(
+        &self,
+        query: &ferrous_cqrses::queries::GetOrderQuery,
+    ) -> Result<Option<OrderDetails>, QueryEngineError> {
+        query
+            .validate()
+            .map_err(|e| QueryEngineError::InvalidQuery(e.to_string()))?;
+        self.session_context.query_order_by_id(&query.order_id)
+    }
+
+    async fn list_orders(
+        &self,
+        query: &ferrous_cqrses::queries::ListOrdersQuery,
+    ) -> Result<OrderListResponse, QueryEngineError> {
+        query
+            .validate()
+            .map_err(|e| QueryEngineError::InvalidQuery(e.to_string()))?;
+        let params = ListOrdersParams {
+            customer_id: query.customer_id.clone(),
+            status: query.status.clone(),
+            limit: Some(i64::from(query.limit)),
+            offset: Some(i64::from(query.offset)),
+        };
+        self.session_context.query_orders_list(&params)
+    }
+}
+
+#[derive(Debug)]
+struct VersionedDeltaState {
+    loaded_version: Option<u64>,
+    last_checked: Option<std::time::Instant>,
+    session: SessionContext,
+}
+
+/// Embedded Apache DataFusion + Delta Lake [`OrderQueryEngine`] with `_delta_log`
+/// version-checked snapshot reload (AD-4, AD-31, closes PRD OQ-1).
+///
+/// Inspects `_delta_log` on a bounded TTL (default 250ms, or 0ms for immediate check)
+/// and reloads `orders_current_state` only when the commit version advances — requiring
+/// zero write-side cache-invalidation calls from `CommandHandler` or `Callback Service`.
+#[derive(Debug)]
+pub struct DataFusionOrderQueryEngine {
+    table_dir: PathBuf,
+    refresh_ttl: std::time::Duration,
+    state: RwLock<VersionedDeltaState>,
+}
+
+impl DataFusionOrderQueryEngine {
+    /// Default `_delta_log` version-check TTL (250ms per AD-31).
+    pub const DEFAULT_REFRESH_TTL: std::time::Duration = std::time::Duration::from_millis(250);
+
+    /// Creates a `DataFusionOrderQueryEngine` targeting a Delta Lake table directory
+    /// (`orders_current_state`), performing an initial load.
+    pub fn from_delta_dir(table_dir: impl AsRef<Path>) -> Result<Self, QueryEngineError> {
+        Self::from_delta_dir_with_ttl(table_dir, Self::DEFAULT_REFRESH_TTL)
+    }
+
+    /// Creates a `DataFusionOrderQueryEngine` with an explicit version-check TTL.
+    pub fn from_delta_dir_with_ttl(
+        table_dir: impl AsRef<Path>,
+        refresh_ttl: std::time::Duration,
+    ) -> Result<Self, QueryEngineError> {
+        let dir = table_dir.as_ref().to_path_buf();
+        let (version, session) = Self::load_session(&dir)?;
+        Ok(Self {
+            table_dir: dir,
+            refresh_ttl,
+            state: RwLock::new(VersionedDeltaState {
+                loaded_version: Some(version),
+                last_checked: Some(std::time::Instant::now()),
+                session,
+            }),
+        })
+    }
+
+    fn load_session(dir: &Path) -> Result<(u64, SessionContext), QueryEngineError> {
+        let provider = DeltaTableProvider::from_delta_path(ORDERS_CURRENT_STATE_TABLE, dir)?;
+        let version = provider.delta_metadata().version;
+        let session = SessionContext::new();
+        session.register_table(ORDERS_CURRENT_STATE_TABLE, Arc::new(provider));
+        Ok((version, session))
+    }
+
+    fn latest_delta_log_version(dir: &Path) -> Result<u64, QueryEngineError> {
+        let delta_log_dir = dir.join("_delta_log");
+        if !delta_log_dir.exists() || !delta_log_dir.is_dir() {
+            return Err(QueryEngineError::DeltaLogNotFound(
+                delta_log_dir.display().to_string(),
+            ));
+        }
+        let mut max_ver: Option<u64> = None;
+        for entry in fs::read_dir(&delta_log_dir)
+            .map_err(|e| QueryEngineError::StorageIo(e.to_string()))?
+        {
+            let path = entry
+                .map_err(|e| QueryEngineError::StorageIo(e.to_string()))?
+                .path();
+            if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if let Ok(ver) = stem.parse::<u64>() {
+                        max_ver = Some(max_ver.map_or(ver, |cur| cur.max(ver)));
+                    }
+                }
+            }
+        }
+        max_ver.ok_or_else(|| {
+            QueryEngineError::DeltaLogNotFound(format!(
+                "No commit JSON files found in '{}'",
+                delta_log_dir.display()
+            ))
+        })
+    }
+
+    /// Checks `_delta_log` commit version if TTL has elapsed and reloads only when version advances.
+    pub fn refresh_if_needed(&self) -> Result<bool, QueryEngineError> {
+        {
+            let guard = self
+                .state
+                .read()
+                .map_err(|e| QueryEngineError::StorageIo(format!("RwLock poisoned: {e}")))?;
+            if let Some(last) = guard.last_checked {
+                if !self.refresh_ttl.is_zero() && last.elapsed() < self.refresh_ttl {
+                    return Ok(false);
+                }
+            }
+        }
+
+        let latest_version = Self::latest_delta_log_version(&self.table_dir)?;
+        let mut guard = self
+            .state
+            .write()
+            .map_err(|e| QueryEngineError::StorageIo(format!("RwLock poisoned: {e}")))?;
+        guard.last_checked = Some(std::time::Instant::now());
+
+        if guard.loaded_version == Some(latest_version) {
+            return Ok(false);
+        }
+
+        let (new_version, new_session) = Self::load_session(&self.table_dir)?;
+        guard.loaded_version = Some(new_version);
+        guard.session = new_session;
+        Ok(true)
+    }
+}
+
+#[async_trait::async_trait]
+impl OrderQueryEngine for DataFusionOrderQueryEngine {
+    async fn get_order(
+        &self,
+        query: &ferrous_cqrses::queries::GetOrderQuery,
+    ) -> Result<Option<OrderDetails>, QueryEngineError> {
+        query
+            .validate()
+            .map_err(|e| QueryEngineError::InvalidQuery(e.to_string()))?;
+        self.refresh_if_needed()?;
+        let guard = self
+            .state
+            .read()
+            .map_err(|e| QueryEngineError::StorageIo(format!("RwLock poisoned: {e}")))?;
+        guard.session.query_order_by_id(&query.order_id)
+    }
+
+    async fn list_orders(
+        &self,
+        query: &ferrous_cqrses::queries::ListOrdersQuery,
+    ) -> Result<OrderListResponse, QueryEngineError> {
+        query
+            .validate()
+            .map_err(|e| QueryEngineError::InvalidQuery(e.to_string()))?;
+        self.refresh_if_needed()?;
+        let params = ListOrdersParams {
+            customer_id: query.customer_id.clone(),
+            status: query.status.clone(),
+            limit: Some(i64::from(query.limit)),
+            offset: Some(i64::from(query.offset)),
+        };
+        let guard = self
+            .state
+            .read()
+            .map_err(|e| QueryEngineError::StorageIo(format!("RwLock poisoned: {e}")))?;
+        guard.session.query_orders_list(&params)
+    }
+
+    fn current_delta_version(&self) -> Option<u64> {
+        self.state.read().ok().and_then(|g| g.loaded_version)
+    }
+}
