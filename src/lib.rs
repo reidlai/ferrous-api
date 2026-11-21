@@ -16,8 +16,9 @@ pub mod telemetry;
 
 pub use auth::{AuthError, JwtValidator, RequireScope, SCOPE_API_READ, SCOPE_API_WRITE};
 pub use ferrous_cqrses::callback::{
-    CallbackError, CallbackOutcome, CallbackPublisher, CallbackService, EventListener,
-    SettlementCallbackMessage, SettlementStatus, CALLBACKS_CONSUMER_GROUP, CALLBACKS_TOPIC,
+    CallbackConsumer, CallbackConsumerOutcome, CallbackError, CallbackOutcome, CallbackPublisher,
+    CallbackService, EventListener, SettlementCallbackMessage, SettlementStatus,
+    CALLBACKS_CONSUMER_GROUP, CALLBACKS_TOPIC, CALLBACK_TOPIC,
 };
 pub use generated::*;
 pub use handlers::*;
@@ -30,7 +31,7 @@ pub use query_engine::{
 pub use ferrous_cqrses::write_delta_table_snapshot;
 pub use publisher::{
     IggyPublisher, InMemoryIggyPublisher, PublishedMessage, PublisherError, TcpIggyPublisher,
-    ORDERS_EVENTS_TOPIC, ORDERS_INTAKE_TOPIC,
+    ORDERS_CALLBACK_TOPIC, ORDERS_CONSOLIDATED_TOPIC, ORDERS_EVENTS_TOPIC, ORDERS_INTAKE_TOPIC,
 };
 pub use sse::{
     AgentTaskHandle, EventStreamBroadcaster, EventStreamFilter, SseAbortGuard,

@@ -1,6 +1,6 @@
 //! Orders command handler implementing `OrdersApi` trait, validating domain invariants
 //! synchronously against SierraDB via `CommandHandler`, publishing committed `DomainEvent`s
-//! to Apache Iggy (`orders/events`), and broadcasting post-commit `DomainEventStreamItem`
+//! to Apache Iggy (`orders/consolidated`), and broadcasting post-commit `DomainEventStreamItem`
 //! notifications over SSE.
 
 use std::sync::Arc;
@@ -215,7 +215,7 @@ impl OrdersApi for OrdersHandler {
                 .map_err(|e| map_domain_error(e, INSTANCE))?
         };
 
-        // 2. Post-commit publication to Apache Iggy orders/events
+        // 2. Post-commit publication to Apache Iggy orders/consolidated
         self.publisher
             .publish_event(&domain_event)
             .await
@@ -243,7 +243,7 @@ impl OrdersApi for OrdersHandler {
             order_id = %trimmed_order_id,
             amount_cents = payload.amount_cents,
             user = %verified_claims.sub,
-            "Committed CourtesyCredit concession to SierraDB and published to orders/events"
+            "Committed CourtesyCredit concession to SierraDB and published to orders/consolidated"
         );
 
         Ok(IssueCreditResponse::Accepted(CommandAcceptedResponse::new(
@@ -276,7 +276,7 @@ impl OrdersApi for OrdersHandler {
                 .map_err(|e| map_domain_error(e, INSTANCE))?
         };
 
-        // 2. Post-commit publication to Apache Iggy orders/events
+        // 2. Post-commit publication to Apache Iggy orders/consolidated
         self.publisher
             .publish_event(&domain_event)
             .await
@@ -302,7 +302,7 @@ impl OrdersApi for OrdersHandler {
             %command_id,
             order_id = %trimmed_order_id,
             user = %verified_claims.sub,
-            "Committed OrderCancelled to SierraDB and published to orders/events"
+            "Committed OrderCancelled to SierraDB and published to orders/consolidated"
         );
 
         Ok(CancelOrderResponse::Accepted(CommandAcceptedResponse::new(
