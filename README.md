@@ -13,14 +13,15 @@
 flowchart LR
     UI["ferrous-frontend<br/>(Svelte 5 + EventSource / Fetch)"]
     IAM["ferrous-iam<br/>(Kanidm PAP/PDP & JWKS)"]
-    IGGY["Apache Iggy<br/>(orders/intake WAL)"]
+    SIERRA[("SierraDB Event Store<br/>(ESCAN & EAPPEND :9090)")]
+    IGGY["Apache Iggy<br/>(orders/consolidated & orders/callback)"]
     DELTA["Delta Lake<br/>(delta/orders_current_state)"]
-    ARROYO["Arroyo & Pipeline<br/>(Watermark / Commit Stats)"]
 
     subgraph API["ferrous-api (Axum 0.7 + Tokio Runtime :8080)"]
         PEP["Kanidm PEP Middleware<br/>(src/auth.rs: RequireScope + JwtValidator)"]
         ROUTER["Contract-First Router<br/>(src/generated/apis.rs)"]
-        CMD["OrdersHandler<br/>(src/handlers/orders.rs)"]
+        CMD["OrdersHandler / CommandHandler<br/>(src/handlers/orders.rs)"]
+        CB["Callback Service<br/>(orders/callback consumer)"]
         PUB["IggyPublisher<br/>(src/publisher.rs)"]
         QRY["QueriesHandler<br/>(src/handlers/queries.rs)"]
         LH["In-Process Query Engine<br/>(src/query_engine.rs: SessionContext + TableProvider)"]
@@ -34,10 +35,12 @@ flowchart LR
     ROUTER --> CMD
     ROUTER --> QRY
     ROUTER --> STR
-    CMD --> PUB -->|"TCP Wire Protocol (<5ms)"| IGGY
+    CMD <-->|"ESCAN / EAPPEND"| SIERRA
+    CMD --> PUB -->|"orders/consolidated"| IGGY
+    IGGY -->|"orders/callback (cg-order-callback)"| CB
+    CB -->|"Rehydrate, Validate & EAPPEND"| SIERRA
     QRY --> LH -->|"Zero-Copy Columnar Scan (<3ms p95)"| DELTA
     STR --> SSE -->|"text/event-stream + <50ms abort"| UI
-    ARROYO -.->|"Read-Only Telemetry Poll"| SSE
 ```
 
 ---
@@ -57,8 +60,8 @@ Authoritative contract: [`gen/http/openapi3.json`](gen/http/openapi3.json) & [`s
 
 | Method | Path | Operation / Handler | Auth Scope | Responses | Description |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/commands/orders/issue-credit` | `orders#issue_credit` | `jwt_bearer` (`api:write`) | `202`, `400`, `401`, `403`, `422`, `500` | Dispatch `IssueCourtesyCredit` command to Iggy WAL |
-| `POST` | `/api/v1/commands/orders/cancel` | `orders#cancel_order` | `jwt_bearer` (`api:write`) | `202`, `400`, `401`, `403`, `422`, `500` | Dispatch `CancelOrder` command to Iggy WAL |
+| `POST` | `/api/v1/commands/orders/issue-credit` | `orders#issue_credit` | `jwt_bearer` (`api:write`) | `202`, `400`, `401`, `403`, `422`, `500` | Validate invariants, `EAPPEND` to SierraDB, and publish to `orders/consolidated` |
+| `POST` | `/api/v1/commands/orders/cancel` | `orders#cancel_order` | `jwt_bearer` (`api:write`) | `202`, `400`, `401`, `403`, `422`, `500` | Validate invariants, `EAPPEND` to SierraDB, and publish to `orders/consolidated` |
 | `GET` | `/api/v1/orders/{order_id}` | `queries#get_order` | `jwt_bearer` (`api:read`) | `200`, `400`, `401`, `404`, `500` | Fetch single order details by ID from Delta Lake |
 | `GET` | `/api/v1/orders` | `queries#list_orders` | `jwt_bearer` (`api:read`) | `200`, `400`, `401`, `500` | Query paginated orders from Delta Lake table |
 | `GET` | `/api/v1/events/stream` | `streams#event_stream` | `jwt_bearer` (`api:read`) | `200` (`text/event-stream`), `400`, `401`, `500` | Stream domain events and AI agent thoughts over SSE |

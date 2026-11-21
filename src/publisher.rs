@@ -24,11 +24,17 @@ use uuid::Uuid;
 
 use crate::generated::models::ProblemDetails;
 
-/// Canonical Apache Iggy WAL stream/topic path for order mutation commands.
+/// Canonical Apache Iggy stream/topic path for direct `stream-replay-rs` raw data ingestion into Delta Lake.
 pub const ORDERS_INTAKE_TOPIC: &str = "orders/intake";
 
-/// Canonical Apache Iggy topic path for committed domain events.
-pub const ORDERS_EVENTS_TOPIC: &str = "orders/events";
+/// Canonical Apache Iggy topic path for inbound settlement callback messages consumed by `CallbackService`.
+pub const ORDERS_CALLBACK_TOPIC: &str = "orders/callback";
+
+/// Canonical Apache Iggy topic path for committed domain state/events (`orders/consolidated`).
+pub const ORDERS_CONSOLIDATED_TOPIC: &str = "orders/consolidated";
+
+/// Backward-compatible alias pointing to [`ORDERS_CONSOLIDATED_TOPIC`].
+pub const ORDERS_EVENTS_TOPIC: &str = ORDERS_CONSOLIDATED_TOPIC;
 
 /// Errors occurring during command serialization or Apache Iggy WAL publication.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -112,13 +118,13 @@ pub trait IggyPublisher: Send + Sync + std::fmt::Debug {
         .await
     }
 
-    /// Serializes a [`DomainEvent`] and publishes it to `orders/events` partitioned strictly by `order_id`.
+    /// Serializes a [`DomainEvent`] and publishes it to `orders/consolidated` partitioned strictly by `order_id`.
     async fn publish_event(&self, event: &DomainEvent) -> Result<(), PublisherError> {
         let payload = serde_json::to_vec(event)
             .map_err(|e| PublisherError::Serialization(e.to_string()))?;
 
         self.publish_raw(
-            ORDERS_EVENTS_TOPIC,
+            ORDERS_CONSOLIDATED_TOPIC,
             event.order_id(),
             event.event_id(),
             payload,

@@ -18,8 +18,7 @@ use crate::telemetry::{BenchmarkTelemetryBroadcaster, PipelineTelemetryHub};
 /// synchronous CQRS/ES `Arc<Mutex<CommandHandler>>`.
 #[derive(Clone, Debug)]
 pub struct AppState {
-    /// Apache Iggy WAL publisher for dispatching `OrderCommand` events to `orders/intake`
-    /// and committed `DomainEvent`s to `orders/events`.
+    /// Apache Iggy publisher for committed `DomainEvent`s (`orders/consolidated`).
     pub publisher: Arc<dyn IggyPublisher>,
     /// Kanidm PEP JWT validator backed by an in-memory JWKS cache.
     pub jwt_validator: Arc<JwtValidator>,
@@ -180,13 +179,12 @@ impl AppState {
     }
 
     /// Creates a configured [`ferrous_cqrses::callback::CallbackService`] instance wired to this
-    /// `AppState`'s command handler, publisher (`orders/events`), and SSE broadcaster.
+    /// `AppState`'s command handler (SierraDB `ESCAN`/`EAPPEND`) and SSE broadcaster.
+    ///
+    /// Does not re-publish back to `orders/consolidated` to prevent a `Projection <-> Callback Service` loop.
     pub fn callback_service(&self) -> ferrous_cqrses::callback::CallbackService {
         let broadcaster = self.event_broadcaster.clone();
-        let publisher_adapter = Arc::new(IggyCallbackPublisherAdapter(self.publisher.clone()));
         ferrous_cqrses::callback::CallbackService::new(self.command_handler.clone())
-            .with_publisher(publisher_adapter)
-            .with_events_topic(crate::publisher::ORDERS_EVENTS_TOPIC)
             .with_event_listener(move |event, command_id| {
                 let (event_type, payload_json) = match event {
                     ferrous_cqrses::events::DomainEvent::CourtesyCreditSettled(e) => (
@@ -224,7 +222,7 @@ impl AppState {
 }
 
 /// Adapter converting `Arc<dyn IggyPublisher>` into `ferrous_cqrses::callback::CallbackPublisher`.
-struct IggyCallbackPublisherAdapter(Arc<dyn IggyPublisher>);
+pub struct IggyCallbackPublisherAdapter(pub Arc<dyn IggyPublisher>);
 
 #[async_trait::async_trait]
 impl ferrous_cqrses::callback::CallbackPublisher for IggyCallbackPublisherAdapter {

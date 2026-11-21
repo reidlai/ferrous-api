@@ -15,7 +15,7 @@ use ferrous_api::{
     generated::models::{Claims, CommandAcceptedResponse, ProblemDetails},
     publisher::{
         IggyPublisher, InMemoryIggyPublisher, PublishedMessage, TcpIggyPublisher,
-        ORDERS_EVENTS_TOPIC,
+        ORDERS_CONSOLIDATED_TOPIC,
     },
     state::AppState,
 };
@@ -82,7 +82,7 @@ async fn test_valid_courtesy_credit_commits_and_publishes_to_orders_events() {
     let messages = publisher.messages();
     assert_eq!(messages.len(), 1);
     let published = &messages[0];
-    assert_eq!(published.topic, ORDERS_EVENTS_TOPIC);
+    assert_eq!(published.topic, ORDERS_CONSOLIDATED_TOPIC);
     assert_eq!(published.partition_key, order_id);
 
     let decoded = published.decode_event().unwrap();
@@ -254,7 +254,7 @@ async fn test_cancel_order_commits_and_publishes_to_orders_events() {
     let messages = publisher.messages();
     assert_eq!(messages.len(), 1);
     let published = &messages[0];
-    assert_eq!(published.topic, ORDERS_EVENTS_TOPIC);
+    assert_eq!(published.topic, ORDERS_CONSOLIDATED_TOPIC);
     assert_eq!(published.partition_key, order_id);
 
     let decoded = published.decode_event().unwrap();
@@ -446,8 +446,8 @@ async fn test_sequential_commands_for_same_order_id_share_partition_key_and_mono
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].partition_key, shared_order_id);
     assert_eq!(messages[1].partition_key, shared_order_id);
-    assert_eq!(messages[0].topic, ORDERS_EVENTS_TOPIC);
-    assert_eq!(messages[1].topic, ORDERS_EVENTS_TOPIC);
+    assert_eq!(messages[0].topic, ORDERS_CONSOLIDATED_TOPIC);
+    assert_eq!(messages[1].topic, ORDERS_CONSOLIDATED_TOPIC);
 }
 
 #[tokio::test]
@@ -520,7 +520,7 @@ async fn test_tcp_iggy_publisher_delivers_framed_event_over_loopback_socket() {
     tcp_publisher.publish_event(&event).await.unwrap();
 
     let received = server_task.await.unwrap();
-    assert_eq!(received.topic, ORDERS_EVENTS_TOPIC);
+    assert_eq!(received.topic, ORDERS_CONSOLIDATED_TOPIC);
     assert_eq!(received.partition_key, order_id);
     assert_eq!(received.decode_event().unwrap(), event);
 }

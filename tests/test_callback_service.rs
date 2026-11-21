@@ -21,13 +21,11 @@ use ferrous_api::{
         SettlementStatus,
     },
     create_router_with_app_state,
-    publisher::ORDERS_EVENTS_TOPIC,
     state::AppState,
 };
 use ferrous_cqrses::{
     commands::{IssueCourtesyCreditCommand, OrderCommand},
     domain::order::{CreditSettlementStatus, DomainError},
-    events::DomainEvent,
 };
 use serde_json::json;
 use tower::ServiceExt;
@@ -85,22 +83,8 @@ async fn test_successful_credit_settlement_callback() {
         assert_eq!(agg.version, 3);
     }
 
-    // 3. Verify publication to Apache Iggy orders/events
-    let messages = publisher.messages();
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].topic, ORDERS_EVENTS_TOPIC);
-    assert_eq!(messages[0].partition_key, order_id);
-
-    let decoded = messages[0].decode_event().unwrap();
-    match decoded {
-        DomainEvent::CourtesyCreditSettled(ref e) => {
-            assert_eq!(e.order_id, order_id);
-            assert_eq!(e.amount_cents, 1500);
-            assert_eq!(e.transaction_ref, "tx-123");
-            assert_eq!(e.version, 3);
-        }
-        other => panic!("Expected DomainEvent::CourtesyCreditSettled, got {other:?}"),
-    }
+    // 3. Verify CallbackService does NOT re-publish to orders/consolidated (prevents Projection <-> Callback loop)
+    assert!(publisher.is_empty());
 
     // 4. Verify SSE broadcast notification
     let sse_item = sse_rx.try_recv().unwrap();
@@ -163,19 +147,8 @@ async fn test_settlement_failure_callback() {
         assert_eq!(agg.version, 3);
     }
 
-    // Verify Iggy event
-    let messages = publisher.messages();
-    assert_eq!(messages.len(), 1);
-    let decoded = messages[0].decode_event().unwrap();
-    match decoded {
-        DomainEvent::CourtesyCreditSettlementFailed(ref e) => {
-            assert_eq!(e.order_id, order_id);
-            assert_eq!(e.amount_cents, 1500);
-            assert_eq!(e.reason, "Insufficient account balance");
-            assert_eq!(e.version, 3);
-        }
-        other => panic!("Expected DomainEvent::CourtesyCreditSettlementFailed, got {other:?}"),
-    }
+    // Verify no loop-back publish to Iggy
+    assert!(publisher.is_empty());
 
     // Verify SSE item
     let sse_item = sse_rx.try_recv().unwrap();
@@ -386,7 +359,7 @@ async fn test_idempotent_duplicate_settlement_callback_acknowledged() {
         }
         other => panic!("Expected CallbackOutcome::Processed, got {other:?}"),
     }
-    assert_eq!(publisher.messages().len(), 1);
+    assert!(publisher.is_empty());
 
     // 2. Retried duplicate request with identical transaction_ref
     let outcome2 = callback_service.process_callback(message).await.unwrap();
@@ -407,8 +380,8 @@ async fn test_idempotent_duplicate_settlement_callback_acknowledged() {
         assert_eq!(agg.settled_credit_cents, 500);
         assert_eq!(agg.version, 3);
     }
-    // Verify no duplicate message published to Iggy
-    assert_eq!(publisher.messages().len(), 1);
+    // Verify no loop-back message published to Iggy
+    assert!(publisher.is_empty());
 }
 
 #[tokio::test]
@@ -510,7 +483,11 @@ async fn test_iggy_publish_failure_rolls_back_sierradb() {
             .unwrap();
     }
 
-    let callback_service: CallbackService = state.clone().into();
+    let callback_service: CallbackService = CallbackService::from(state.clone()).with_publisher(
+        std::sync::Arc::new(ferrous_api::state::IggyCallbackPublisherAdapter(
+            publisher.clone(),
+        )),
+    );
     let message = SettlementCallbackMessage {
         order_id: order_id.clone(),
         amount_cents: 1000,
@@ -574,7 +551,7 @@ async fn test_raw_json_message_bytes_processing() {
         }
         other => panic!("Expected CallbackOutcome::Processed, got {other:?}"),
     }
-    assert_eq!(publisher.messages().len(), 1);
+    assert!(publisher.is_empty());
 }
 
 #[tokio::test]
