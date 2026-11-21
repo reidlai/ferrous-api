@@ -7,7 +7,7 @@ use std::sync::Arc;
 use ferrous_cqrses::handler::CommandHandler;
 
 use crate::auth::JwtValidator;
-use crate::query_engine::SessionContext;
+use crate::query_engine::{InMemoryOrderQueryEngine, OrderQueryEngine, SessionContext};
 use crate::publisher::{IggyPublisher, InMemoryIggyPublisher};
 use crate::sse::EventStreamBroadcaster;
 use crate::telemetry::{BenchmarkTelemetryBroadcaster, PipelineTelemetryHub};
@@ -24,6 +24,8 @@ pub struct AppState {
     pub jwt_validator: Arc<JwtValidator>,
     /// Embedded in-process Apache DataFusion `SessionContext` for <3ms lakehouse SQL queries.
     pub session_context: Arc<SessionContext>,
+    /// CQRS Query Engine abstraction (in-memory test backend or DataFusion/Delta Lake runtime, AD-31).
+    pub query_engine: Arc<dyn OrderQueryEngine>,
     /// Native Axum SSE event broadcaster and Tokio `CancellationToken` hub.
     pub event_broadcaster: Arc<EventStreamBroadcaster>,
     /// Real-time SSE benchmark telemetry broadcaster (`GET /api/v1/benchmarks/{run_id}/stream`).
@@ -49,10 +51,12 @@ impl AppState {
     /// a default in-process `SessionContext`, `EventStreamBroadcaster`, `BenchmarkTelemetryBroadcaster`,
     /// `PipelineTelemetryHub`, and in-memory `CommandHandler`.
     pub fn new(publisher: Arc<dyn IggyPublisher>, jwt_validator: Arc<JwtValidator>) -> Self {
+        let session_context = Arc::new(SessionContext::default());
         Self {
             publisher,
             jwt_validator,
-            session_context: Arc::new(SessionContext::default()),
+            query_engine: Arc::new(InMemoryOrderQueryEngine::new(Arc::clone(&session_context))),
+            session_context,
             event_broadcaster: Arc::new(EventStreamBroadcaster::new()),
             benchmark_broadcaster: Arc::new(BenchmarkTelemetryBroadcaster::new()),
             pipeline_telemetry: Arc::new(PipelineTelemetryHub::new()),
@@ -69,7 +73,26 @@ impl AppState {
         Self {
             publisher,
             jwt_validator,
+            query_engine: Arc::new(InMemoryOrderQueryEngine::new(Arc::clone(&session_context))),
             session_context,
+            event_broadcaster: Arc::new(EventStreamBroadcaster::new()),
+            benchmark_broadcaster: Arc::new(BenchmarkTelemetryBroadcaster::new()),
+            pipeline_telemetry: Arc::new(PipelineTelemetryHub::new()),
+            command_handler: Arc::new(tokio::sync::Mutex::new(CommandHandler::new())),
+        }
+    }
+
+    /// Creates a new `AppState` with an explicit [`OrderQueryEngine`] implementation (AD-31).
+    pub fn with_query_engine(
+        publisher: Arc<dyn IggyPublisher>,
+        jwt_validator: Arc<JwtValidator>,
+        query_engine: Arc<dyn OrderQueryEngine>,
+    ) -> Self {
+        Self {
+            publisher,
+            jwt_validator,
+            session_context: Arc::new(SessionContext::default()),
+            query_engine,
             event_broadcaster: Arc::new(EventStreamBroadcaster::new()),
             benchmark_broadcaster: Arc::new(BenchmarkTelemetryBroadcaster::new()),
             pipeline_telemetry: Arc::new(PipelineTelemetryHub::new()),
@@ -87,6 +110,7 @@ impl AppState {
         Self {
             publisher,
             jwt_validator,
+            query_engine: Arc::new(InMemoryOrderQueryEngine::new(Arc::clone(&session_context))),
             session_context,
             event_broadcaster: Arc::new(EventStreamBroadcaster::new()),
             benchmark_broadcaster: Arc::new(BenchmarkTelemetryBroadcaster::new()),
@@ -101,10 +125,12 @@ impl AppState {
         jwt_validator: Arc<JwtValidator>,
         event_broadcaster: Arc<EventStreamBroadcaster>,
     ) -> Self {
+        let session_context = Arc::new(SessionContext::default());
         Self {
             publisher,
             jwt_validator,
-            session_context: Arc::new(SessionContext::default()),
+            query_engine: Arc::new(InMemoryOrderQueryEngine::new(Arc::clone(&session_context))),
+            session_context,
             event_broadcaster,
             benchmark_broadcaster: Arc::new(BenchmarkTelemetryBroadcaster::new()),
             pipeline_telemetry: Arc::new(PipelineTelemetryHub::new()),
@@ -137,10 +163,12 @@ impl AppState {
         let broadcaster = Arc::new(EventStreamBroadcaster::new_live());
         let benchmark_broadcaster = Arc::new(BenchmarkTelemetryBroadcaster::new_live());
         let pipeline_telemetry = Arc::new(PipelineTelemetryHub::new_live());
+        let session_context = Arc::new(SessionContext::default());
         let state = Self {
             publisher: Arc::clone(&publisher) as Arc<dyn IggyPublisher>,
             jwt_validator: Arc::clone(&validator),
-            session_context: Arc::new(SessionContext::default()),
+            query_engine: Arc::new(InMemoryOrderQueryEngine::new(Arc::clone(&session_context))),
+            session_context,
             event_broadcaster: Arc::clone(&broadcaster),
             benchmark_broadcaster,
             pipeline_telemetry,
