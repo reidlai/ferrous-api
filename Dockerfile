@@ -2,7 +2,7 @@
 # Hardened rootless FROM scratch container build for ferrous-api Axum API gateway
 # Adheres strictly to AD-24 (<50MB footprint, UID 10001, static musl, Day-0 defense)
 
-FROM rust:1.86-alpine AS builder
+FROM rust:1.99-alpine AS builder
 
 # hadolint ignore=DL3018
 RUN apk add --no-cache musl-dev gcc g++ make cmake ca-certificates binutils
@@ -40,7 +40,7 @@ COPY --from=builder /etc/passwd.scratch /etc/passwd
 COPY --from=builder /etc/group.scratch /etc/group
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /tmp_scratch /tmp
-COPY --from=builder /data_delta_scratch /data/delta
+COPY --from=builder --chown=10001:10001 /data_delta_scratch /data/delta
 COPY --from=builder /usr/src/workspace/ferrous-api/target/x86_64-unknown-linux-musl/release/ferrous-api /ferrous-api
 
 USER 10001:10001
