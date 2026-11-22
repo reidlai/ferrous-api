@@ -7,6 +7,7 @@ pub mod auth;
 pub use ferrous_cqrses::callback;
 pub mod generated;
 pub mod handlers;
+pub mod mcp;
 pub mod publisher;
 pub mod query_engine;
 pub use query_engine as lakehouse;
@@ -153,6 +154,12 @@ pub fn create_router_with_app_state(app_state: AppState) -> Router {
 
     let api_state = ApiState::new(orders, queries, streams);
     build_api_router(api_state)
+        .merge(mcp::build_mcp_router(app_state.clone()))
+        .layer(RequireScope::for_path_prefix(
+            Arc::clone(&app_state.jwt_validator),
+            "/mcp",
+            SCOPE_API_READ,
+        ))
         .layer(RequireScope::for_path_prefix(
             app_state.jwt_validator,
             "/api/v1/commands",
