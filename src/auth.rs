@@ -438,6 +438,11 @@ impl JwtValidator {
         self.issue_token_with_kid(&self.default_kid, claims, &encoding_key, self.algorithm)
     }
 
+    /// Returns the configured expected issuer (`iss`), if any.
+    pub fn expected_issuer(&self) -> Option<&str> {
+        self.issuer.as_deref()
+    }
+
     /// Issues a signed JWT bearer token with an explicit key ID (`kid`), `EncodingKey`, and `Algorithm`.
     pub fn issue_token_with_kid(
         &self,
@@ -704,4 +709,110 @@ where
         let fut = self.inner.call(req);
         Box::pin(fut)
     }
+}
+
+/// Request payload for `POST /api/v1/auth/basic`.
+#[derive(Debug, Deserialize)]
+pub struct BasicAuthRequest {
+    pub username: String,
+    pub password: String,
+}
+
+/// Response payload for `POST /api/v1/auth/basic` matching `ferrous-frontend`'s `RawAuthResponse`.
+#[derive(Debug, Serialize)]
+pub struct BasicAuthResponse {
+    pub token: String,
+    pub username: String,
+    pub role: String,
+    pub tenant: String,
+}
+
+const DEFAULT_DEV_OPERATOR_PASSWORD: &str = "ferrous-demo-2026";
+
+fn resolve_operator_persona(username: &str, password: &str) -> Option<(&'static str, &'static str)> {
+    let (role, env_var) = match username {
+        "carlos.support" => ("customer_specialist", "CARLOS_SUPPORT_PASSWORD"),
+        "operations.lead" => ("operations_manager", "OPS_LEAD_PASSWORD"),
+        "admin.sec" => ("system_admin", "ADMIN_SEC_PASSWORD"),
+        _ => return None,
+    };
+
+    let expected = std::env::var(env_var)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| DEFAULT_DEV_OPERATOR_PASSWORD.to_string());
+
+    if password == expected {
+        Some((role, "SP-01"))
+    } else {
+        None
+    }
+}
+
+async fn handle_basic_auth(
+    axum::extract::State(validator): axum::extract::State<Arc<JwtValidator>>,
+    axum::Json(payload): axum::Json<BasicAuthRequest>,
+) -> Response {
+    let username = payload.username.trim();
+    if username.is_empty() || payload.password.is_empty() {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({
+                "error": "INVALID_INPUT",
+                "message": "Username and password are required."
+            })),
+        )
+            .into_response();
+    }
+
+    let Some((role, tenant)) = resolve_operator_persona(username, &payload.password) else {
+        return (
+            axum::http::StatusCode::UNAUTHORIZED,
+            axum::Json(serde_json::json!({
+                "error": "INVALID_CREDENTIALS",
+                "message": "Invalid operator credentials. Please verify your username and password."
+            })),
+        )
+            .into_response();
+    };
+
+    let mut claims = Claims::new(username)
+        .with_scope(SCOPE_API_READ)
+        .with_scope(SCOPE_API_WRITE)
+        .with_group(role)
+        .with_exp(Utc::now().timestamp() + 8 * 3600);
+    if let Some(iss) = validator.expected_issuer() {
+        claims = claims.with_iss(iss);
+    }
+
+    match validator.issue_token(&claims) {
+        Ok(token) => (
+            axum::http::StatusCode::OK,
+            axum::Json(BasicAuthResponse {
+                token,
+                username: username.to_string(),
+                role: role.to_string(),
+                tenant: tenant.to_string(),
+            }),
+        )
+            .into_response(),
+        Err(err) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(serde_json::json!({
+                "error": "TOKEN_ISSUE_FAILED",
+                "message": err.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// Builds the unauthenticated operator login router (`POST /api/v1/auth/basic`).
+/// Must be merged *outside* `RequireScope` layers so `Authorization: Basic` headers are not
+/// rejected as malformed Bearer JWTs.
+pub fn build_auth_router(validator: Arc<JwtValidator>) -> axum::Router {
+    axum::Router::new()
+        .route("/api/v1/auth/basic", axum::routing::post(handle_basic_auth))
+        .with_state(validator)
 }

@@ -152,6 +152,7 @@ pub fn create_router_with_app_state(app_state: AppState) -> Router {
     let queries = Arc::new(QueriesHandler::with_state(app_state.clone()));
     let streams = Arc::new(StreamsHandler::with_state(app_state.clone()));
 
+    let auth_validator = Arc::clone(&app_state.jwt_validator);
     let api_state = ApiState::new(orders, queries, streams);
     build_api_router(api_state)
         .merge(mcp::build_mcp_router(app_state.clone()))
@@ -165,6 +166,7 @@ pub fn create_router_with_app_state(app_state: AppState) -> Router {
             "/api/v1/commands",
             SCOPE_API_WRITE,
         ))
+        .merge(auth::build_auth_router(auth_validator))
         .layer(tower_http::trace::TraceLayer::new_for_http())
 }
 
