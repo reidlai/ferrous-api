@@ -30,8 +30,8 @@ pub use query_engine::{
     DataFusionOrderQueryEngine, DeltaLogMetadata, DeltaTableProvider, FederatedOrderDisputeRow,
     InMemoryOrderQueryEngine, LakehouseError, OperationalDisputeRecord, OperationalTableProvider,
     OrderQueryEngine, OrderRecord, QueryEngineError, SessionContext, SqlQueryResult,
-    StatusAggregation, TableProvider, DEFAULT_DELTA_ORDERS_PATH, OPERATIONAL_DISPUTES_TABLE,
-    ORDERS_CURRENT_STATE_TABLE,
+    StatusAggregation, TableProvider, DEFAULT_DELTA_ORDERS_PATH, OLIST_ORDERS_TABLE,
+    OPERATIONAL_DISPUTES_TABLE, ORDERS_CURRENT_STATE_TABLE,
 };
 pub use ferrous_cqrses::write_delta_table_snapshot;
 pub use publisher::{

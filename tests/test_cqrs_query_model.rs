@@ -170,3 +170,88 @@ async fn test_datafusion_query_engine_reloads_on_delta_log_version_advance_witho
 
     let _ = fs::remove_dir_all(&tmp_dir);
 }
+
+#[tokio::test]
+async fn test_ad34_olist_orders_ndjson_and_cqrs_projection_overlay_query_engine() {
+    let delta_root = std::env::temp_dir().join(format!(
+        "ferrous-api-ad34-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let olist_dir = delta_root.join("olist_orders");
+    let current_dir = delta_root.join("orders_current_state");
+    std::fs::create_dir_all(olist_dir.join("_delta_log")).unwrap();
+    std::fs::create_dir_all(current_dir.join("_delta_log")).unwrap();
+
+    // 1. Write 2 raw Kaggle olist_orders NDJSON rows as delta-sink emits them
+    let olist_ndjson = concat!(
+        r#"{"order_id":"olist-001","customer_id":"cust-a","order_status":"delivered","order_purchase_timestamp":"2017-10-02T10:56:33Z","order_approved_at":"2017-10-02T11:07:15Z","order_delivered_carrier_date":"2017-10-04T19:55:00Z","order_delivered_customer_date":"2017-10-10T21:25:13Z","order_estimated_delivery_date":"2017-10-18T00:00:00Z"}"#,
+        "\n",
+        r#"{"order_id":"olist-002","customer_id":"cust-b","order_status":"shipped","order_purchase_timestamp":"2017-10-03T08:15:00Z","order_approved_at":"2017-10-03T08:30:00Z","order_delivered_carrier_date":"2017-10-05T12:00:00Z","order_delivered_customer_date":null,"order_estimated_delivery_date":"2017-10-20T00:00:00Z"}"#,
+        "\n"
+    );
+    std::fs::write(olist_dir.join("part-00000000000000000001.ndjson"), olist_ndjson).unwrap();
+    std::fs::write(
+        olist_dir.join("_delta_log/00000000000000000000.json"),
+        "{\"protocol\":{\"minReaderVersion\":1,\"minWriterVersion\":2}}\n{\"metaData\":{\"id\":\"olist-orders\",\"name\":\"olist_orders\"}}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        olist_dir.join("_delta_log/00000000000000000001.json"),
+        "{\"add\":{\"path\":\"part-00000000000000000001.ndjson\",\"size\":100,\"modificationTime\":1730000000000,\"dataChange\":true}}\n",
+    )
+    .unwrap();
+
+    // 2. Write a CQRS ConsolidatedOrderProjection overlay for olist-002 in orders_current_state
+    let cqrs_ndjson = r#"{"order_id":"olist-002","customer_id":"cust-b","order_status":"delivered","order_purchase_timestamp":"2017-10-03T08:15:00Z","order_approved_at":"2017-10-03T08:30:00Z","order_delivered_carrier_date":"2017-10-05T12:00:00Z","order_delivered_customer_date":"2017-10-12T14:00:00Z","order_estimated_delivery_date":"2017-10-20T00:00:00Z","total_amount_cents":12500,"total_freight_cents":1500,"courtesy_credit_cents":500,"credit_delta":500,"version":2,"updated_at":"2017-10-12T14:05:00Z"}"#;
+    std::fs::write(
+        current_dir.join("part-00000000000000000001.ndjson"),
+        format!("{cqrs_ndjson}\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        current_dir.join("_delta_log/00000000000000000000.json"),
+        "{\"protocol\":{\"minReaderVersion\":1,\"minWriterVersion\":2}}\n{\"metaData\":{\"id\":\"orders-current-state\",\"name\":\"orders_current_state\"}}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        current_dir.join("_delta_log/00000000000000000001.json"),
+        "{\"add\":{\"path\":\"part-00000000000000000001.ndjson\",\"size\":100,\"modificationTime\":1730000000000,\"dataChange\":true}}\n",
+    )
+    .unwrap();
+
+    let engine = DataFusionOrderQueryEngine::from_delta_dir_with_ttl(
+        &current_dir,
+        std::time::Duration::from_millis(0),
+    )
+    .expect("DataFusionOrderQueryEngine must load unified olist_orders + orders_current_state");
+
+    // Raw olist-001 from olist_orders is queryable directly
+    let ord1 = engine
+        .get_order(&ferrous_cqrses::queries::GetOrderQuery::new("olist-001"))
+        .await
+        .expect("get_order olist-001")
+        .expect("olist-001 must exist");
+    assert_eq!(ord1.customer_id, "cust-a");
+    assert_eq!(ord1.status, "delivered");
+
+    // olist-002 reflects the CQRS overlay from orders_current_state
+    let ord2 = engine
+        .get_order(&ferrous_cqrses::queries::GetOrderQuery::new("olist-002"))
+        .await
+        .expect("get_order olist-002")
+        .expect("olist-002 must exist");
+    assert_eq!(ord2.status, "delivered");
+    assert_eq!(ord2.total_amount_cents, 12500);
+
+    // List query returns both merged orders
+    let list = engine
+        .list_orders(&ferrous_cqrses::queries::ListOrdersQuery::default())
+        .await
+        .expect("list_orders");
+    assert_eq!(list.total_count, 2);
+
+    let _ = std::fs::remove_dir_all(&delta_root);
+}

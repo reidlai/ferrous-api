@@ -28,6 +28,9 @@ use crate::generated::{
 /// Canonical Delta Lake table name for current order state projections.
 pub const ORDERS_CURRENT_STATE_TABLE: &str = "orders_current_state";
 
+/// Canonical table name for historical Kaggle Olist orders (AD-34).
+pub const OLIST_ORDERS_TABLE: &str = "olist_orders";
+
 /// Canonical operational table name for federated customer dispute records.
 pub const OPERATIONAL_DISPUTES_TABLE: &str = "operational_disputes";
 
@@ -92,14 +95,17 @@ impl LakehouseError {
     }
 }
 
-/// Logical row representation of an order in `orders_current_state`.
+/// Logical row representation of an order in `orders_current_state` or `olist_orders` (AD-34).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrderRecord {
     pub order_id: String,
-    pub customer_id: String,
-    pub status: String,
-    pub total_amount_cents: i64,
     #[serde(default)]
+    pub customer_id: String,
+    #[serde(alias = "order_status")]
+    pub status: String,
+    #[serde(default)]
+    pub total_amount_cents: i64,
+    #[serde(default, alias = "courtesy_credit_cents", alias = "credit_issued")]
     pub credit_issued_cents: i64,
     #[serde(default = "default_currency")]
     pub currency: String,
@@ -109,6 +115,62 @@ pub struct OrderRecord {
     pub updated_at_ms: i64,
     #[serde(default)]
     pub items: Vec<OrderItem>,
+}
+
+/// Flexible JSON/NDJSON wire representation accepting canonical 8-column `olist_orders`,
+/// 14-column `ConsolidatedOrderProjection` (AD-34), and legacy `OrderRecord` rows.
+#[derive(Debug, Deserialize)]
+struct WireOrderRecord {
+    order_id: String,
+    #[serde(default)]
+    customer_id: String,
+    #[serde(alias = "order_status")]
+    status: String,
+    #[serde(default)]
+    total_amount_cents: i64,
+    #[serde(default, alias = "courtesy_credit_cents", alias = "credit_issued")]
+    credit_issued_cents: i64,
+    #[serde(default = "default_currency")]
+    currency: String,
+    #[serde(default)]
+    created_at_ms: Option<i64>,
+    #[serde(default)]
+    updated_at_ms: Option<i64>,
+    #[serde(default)]
+    order_purchase_timestamp: Option<chrono::DateTime<Utc>>,
+    #[serde(default)]
+    updated_at: Option<chrono::DateTime<Utc>>,
+    #[serde(default)]
+    items: Vec<OrderItem>,
+}
+
+impl From<WireOrderRecord> for OrderRecord {
+    fn from(w: WireOrderRecord) -> Self {
+        let purchase_ms = w.order_purchase_timestamp.map(|dt| dt.timestamp_millis());
+        let updated_rfc_ms = w.updated_at.map(|dt| dt.timestamp_millis());
+        let created_at_ms = w
+            .created_at_ms
+            .or(purchase_ms)
+            .or(updated_rfc_ms)
+            .unwrap_or_else(default_timestamp_ms);
+        let updated_at_ms = w
+            .updated_at_ms
+            .or(updated_rfc_ms)
+            .or(purchase_ms)
+            .unwrap_or(created_at_ms);
+
+        Self {
+            order_id: w.order_id,
+            customer_id: w.customer_id,
+            status: w.status,
+            total_amount_cents: w.total_amount_cents,
+            credit_issued_cents: w.credit_issued_cents,
+            currency: w.currency,
+            created_at_ms,
+            updated_at_ms,
+            items: w.items,
+        }
+    }
 }
 
 fn default_currency() -> String {
@@ -264,10 +326,24 @@ pub trait TableProvider: Send + Sync + Debug {
 }
 
 const ORDERS_SCHEMA_COLUMNS: &[&str] = &[
+    // Canonical 8-column olist_orders base (AD-34)
     "order_id",
     "customer_id",
-    "status",
+    "order_status",
+    "order_purchase_timestamp",
+    "order_approved_at",
+    "order_delivered_carrier_date",
+    "order_delivered_customer_date",
+    "order_estimated_delivery_date",
+    // 6-column CQRS / concession overlay (AD-34)
     "total_amount_cents",
+    "total_freight_cents",
+    "courtesy_credit_cents",
+    "credit_delta",
+    "version",
+    "updated_at",
+    // Backwards-compatible query aliases
+    "status",
     "credit_issued_cents",
     "currency",
     "created_at_ms",
@@ -721,13 +797,13 @@ impl DeltaTableProvider {
                     if let Some(records_arr) = add.get("records").and_then(|v| v.as_array()) {
                         let mut parsed = Vec::with_capacity(records_arr.len());
                         for rec_val in records_arr {
-                            let rec = serde_json::from_value::<OrderRecord>(rec_val.clone())
+                            let wire = serde_json::from_value::<WireOrderRecord>(rec_val.clone())
                                 .map_err(|e| {
                                     LakehouseError::StorageIo(format!(
                                         "Invalid inline OrderRecord in Delta log: {e}"
                                     ))
                                 })?;
-                            parsed.push(rec);
+                            parsed.push(OrderRecord::from(wire));
                         }
                         inline_records_by_path.insert(add_path, parsed);
                     }
@@ -1062,10 +1138,10 @@ fn parse_json_or_ndjson_orders(
         return Ok(());
     }
     if trimmed.starts_with('[') {
-        let mut batch: Vec<OrderRecord> = serde_json::from_str(trimmed).map_err(|e| {
+        let batch: Vec<WireOrderRecord> = serde_json::from_str(trimmed).map_err(|e| {
             LakehouseError::StorageIo(format!("Invalid JSON array in Delta data file: {e}"))
         })?;
-        out.append(&mut batch);
+        out.extend(batch.into_iter().map(OrderRecord::from));
         return Ok(());
     }
     for line in trimmed.lines() {
@@ -1073,10 +1149,10 @@ fn parse_json_or_ndjson_orders(
         if line_trimmed.is_empty() {
             continue;
         }
-        let rec: OrderRecord = serde_json::from_str(line_trimmed).map_err(|e| {
+        let wire: WireOrderRecord = serde_json::from_str(line_trimmed).map_err(|e| {
             LakehouseError::StorageIo(format!("Invalid NDJSON row in Delta data file: {e}"))
         })?;
-        out.push(rec);
+        out.push(OrderRecord::from(wire));
     }
     Ok(())
 }
@@ -1542,10 +1618,12 @@ impl SessionContext {
         }
 
         let order_id_eq = where_clause.and_then(|w| extract_sql_equality(w, "order_id"));
-        let status_eq = where_clause.and_then(|w| extract_sql_equality(w, "status"));
+        let status_eq = where_clause.and_then(|w| {
+            extract_sql_equality(w, "order_status").or_else(|| extract_sql_equality(w, "status"))
+        });
         let customer_id_eq = where_clause.and_then(|w| extract_sql_equality(w, "customer_id"));
 
-        // Check for GROUP BY status
+        // Check for GROUP BY status / order_status
         if let Some(gb_pos) = find_keyword_boundary(&after_from_lower, "group") {
             let after_group = after_from[gb_pos + 5..].trim_start();
             let after_group_lower = after_group.to_ascii_lowercase();
@@ -1555,7 +1633,7 @@ impl SessionContext {
                     .next()
                     .unwrap_or("");
                 let group_col = strip_table_prefix(raw_group_col, table_name);
-                if group_col != "status" {
+                if group_col != "status" && group_col != "order_status" {
                     return Err(LakehouseError::ColumnNotFound {
                         table: table_name.to_string(),
                         column: group_col.to_string(),
@@ -1882,15 +1960,58 @@ impl DataFusionOrderQueryEngine {
         })
     }
 
+    fn sibling_olist_dir(dir: &Path) -> Option<PathBuf> {
+        let name = dir.file_name().and_then(|n| n.to_str())?;
+        if name == OLIST_ORDERS_TABLE {
+            return None;
+        }
+        let sibling = dir.parent()?.join(OLIST_ORDERS_TABLE);
+        if sibling.join("_delta_log").is_dir() {
+            Some(sibling)
+        } else {
+            None
+        }
+    }
+
     fn load_session(dir: &Path) -> Result<(u64, SessionContext), QueryEngineError> {
-        let provider = DeltaTableProvider::from_delta_path(ORDERS_CURRENT_STATE_TABLE, dir)?;
-        let version = provider.delta_metadata().version;
+        let current_provider = DeltaTableProvider::from_delta_path(ORDERS_CURRENT_STATE_TABLE, dir)?;
+        let current_version = current_provider.delta_metadata().version;
         let session = SessionContext::new();
-        session.register_table(ORDERS_CURRENT_STATE_TABLE, Arc::new(provider));
-        Ok((version, session))
+
+        if let Some(olist_dir) = Self::sibling_olist_dir(dir) {
+            if let Ok(olist_provider) =
+                DeltaTableProvider::from_delta_path(OLIST_ORDERS_TABLE, &olist_dir)
+            {
+                let olist_version = olist_provider.delta_metadata().version;
+                // Merge canonical olist_orders base rows with orders_current_state CQRS overlays
+                // (duplicate order_id in orders_current_state overwrites base olist_orders row).
+                let mut merged = olist_provider.to_records();
+                merged.extend(current_provider.to_records());
+                let mut unified =
+                    DeltaTableProvider::from_records(ORDERS_CURRENT_STATE_TABLE, merged);
+                unified.table_path = Some(dir.to_path_buf());
+                unified.delta_metadata = current_provider.delta_metadata().clone();
+                session.register_table(OLIST_ORDERS_TABLE, Arc::new(olist_provider));
+                session.register_table(ORDERS_CURRENT_STATE_TABLE, Arc::new(unified));
+                return Ok((current_version.saturating_add(olist_version), session));
+            }
+        }
+
+        session.register_table(ORDERS_CURRENT_STATE_TABLE, Arc::new(current_provider));
+        Ok((current_version, session))
     }
 
     fn latest_delta_log_version(dir: &Path) -> Result<u64, QueryEngineError> {
+        let base_ver = Self::table_delta_log_version(dir)?;
+        if let Some(olist_dir) = Self::sibling_olist_dir(dir) {
+            if let Ok(olist_ver) = Self::table_delta_log_version(&olist_dir) {
+                return Ok(base_ver.saturating_add(olist_ver));
+            }
+        }
+        Ok(base_ver)
+    }
+
+    fn table_delta_log_version(dir: &Path) -> Result<u64, QueryEngineError> {
         let delta_log_dir = dir.join("_delta_log");
         if !delta_log_dir.exists() || !delta_log_dir.is_dir() {
             return Err(QueryEngineError::DeltaLogNotFound(
