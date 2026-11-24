@@ -255,3 +255,83 @@ async fn test_ad34_olist_orders_ndjson_and_cqrs_projection_overlay_query_engine(
 
     let _ = std::fs::remove_dir_all(&delta_root);
 }
+
+#[tokio::test]
+async fn test_story_22_4_all_9_olist_tables_registration_and_item_hydration() {
+    let delta_root = std::env::temp_dir().join(format!(
+        "ferrous-api-ad35-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+
+    // Create _delta_log for orders_current_state + all 9 Olist tables
+    let mut all_dirs: Vec<&str> = vec!["orders_current_state"];
+    all_dirs.extend_from_slice(ferrous_api::ALL_OLIST_TABLES);
+    for tbl in &all_dirs {
+        let log_dir = delta_root.join(tbl).join("_delta_log");
+        std::fs::create_dir_all(&log_dir).unwrap();
+        std::fs::write(
+            log_dir.join("00000000000000000000.json"),
+            format!(
+                "{{\"protocol\":{{\"minReaderVersion\":1,\"minWriterVersion\":2}}}}\n{{\"metaData\":{{\"id\":\"{tbl}\",\"name\":\"{tbl}\"}}}}\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    // Write 1 order into olist_orders and 2 items into olist_order_items
+    let olist_dir = delta_root.join("olist_orders");
+    std::fs::write(
+        olist_dir.join("part-00000000000000000001.ndjson"),
+        "{\"order_id\":\"ord-9tbl-1\",\"customer_id\":\"cust-9\",\"order_status\":\"delivered\",\"order_purchase_timestamp\":\"2017-10-02T10:56:33Z\",\"order_approved_at\":null,\"order_delivered_carrier_date\":null,\"order_delivered_customer_date\":null,\"order_estimated_delivery_date\":\"2017-10-18T00:00:00Z\"}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        olist_dir.join("_delta_log/00000000000000000001.json"),
+        "{\"add\":{\"path\":\"part-00000000000000000001.ndjson\",\"size\":100,\"modificationTime\":1730000000000,\"dataChange\":true}}\n",
+    )
+    .unwrap();
+
+    let items_dir = delta_root.join("olist_order_items");
+    std::fs::write(
+        items_dir.join("part-00000000000000000001.ndjson"),
+        concat!(
+            "{\"order_id\":\"ord-9tbl-1\",\"order_item_id\":1,\"product_id\":\"prod-a\",\"seller_id\":\"sel-1\",\"shipping_limit_date\":\"2017-10-06T00:00:00Z\",\"price\":49.90,\"freight_value\":10.00}\n",
+            "{\"order_id\":\"ord-9tbl-1\",\"order_item_id\":2,\"product_id\":\"prod-b\",\"seller_id\":\"sel-1\",\"shipping_limit_date\":\"2017-10-06T00:00:00Z\",\"price\":20.10,\"freight_value\":5.00}\n"
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        items_dir.join("_delta_log/00000000000000000001.json"),
+        "{\"add\":{\"path\":\"part-00000000000000000001.ndjson\",\"size\":100,\"modificationTime\":1730000000000,\"dataChange\":true}}\n",
+    )
+    .unwrap();
+
+    let engine = DataFusionOrderQueryEngine::from_delta_dir_with_ttl(
+        delta_root.join("orders_current_state"),
+        std::time::Duration::from_millis(0),
+    )
+    .expect("must load all 9 Olist tables + orders_current_state");
+
+    let registered = engine.registered_tables();
+    assert_eq!(registered.len(), 10, "orders_current_state + 9 olist_* tables");
+    for tbl in ferrous_api::ALL_OLIST_TABLES {
+        assert!(
+            registered.iter().any(|r| r == tbl),
+            "Missing registered table {tbl}"
+        );
+    }
+
+    // Order details must hydrate the 2 real Olist items and total_amount_cents (4990 + 2010 = 7000)
+    let details = engine
+        .get_order(&ferrous_cqrses::queries::GetOrderQuery::new("ord-9tbl-1"))
+        .await
+        .unwrap()
+        .expect("ord-9tbl-1 must exist");
+    assert_eq!(details.items.len(), 2);
+    assert_eq!(details.total_amount_cents, 7000);
+
+    let _ = std::fs::remove_dir_all(&delta_root);
+}

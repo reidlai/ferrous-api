@@ -30,7 +30,10 @@ pub use query_engine::{
     DataFusionOrderQueryEngine, DeltaLogMetadata, DeltaTableProvider, FederatedOrderDisputeRow,
     InMemoryOrderQueryEngine, LakehouseError, OperationalDisputeRecord, OperationalTableProvider,
     OrderQueryEngine, OrderRecord, QueryEngineError, SessionContext, SqlQueryResult,
-    StatusAggregation, TableProvider, DEFAULT_DELTA_ORDERS_PATH, OLIST_ORDERS_TABLE,
+    StatusAggregation, TableProvider, ALL_OLIST_TABLES, DEFAULT_DELTA_ORDERS_PATH,
+    OLIST_CATEGORY_TRANSLATION_TABLE, OLIST_CUSTOMERS_TABLE, OLIST_GEOLOCATION_TABLE,
+    OLIST_ORDERS_TABLE, OLIST_ORDER_ITEMS_TABLE, OLIST_ORDER_PAYMENTS_TABLE,
+    OLIST_ORDER_REVIEWS_TABLE, OLIST_PRODUCTS_TABLE, OLIST_SELLERS_TABLE,
     OPERATIONAL_DISPUTES_TABLE, ORDERS_CURRENT_STATE_TABLE,
 };
 pub use ferrous_cqrses::write_delta_table_snapshot;
