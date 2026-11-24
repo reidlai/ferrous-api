@@ -119,6 +119,12 @@ impl AppState {
         }
     }
 
+    /// Replaces the active [`OrderQueryEngine`] backend (e.g. with `TiDbOrderQueryEngine`, AD-36).
+    pub fn set_query_engine(mut self, query_engine: Arc<dyn OrderQueryEngine>) -> Self {
+        self.query_engine = query_engine;
+        self
+    }
+
     /// Creates a new `AppState` with an explicit `Arc<EventStreamBroadcaster>`.
     pub fn with_event_broadcaster(
         publisher: Arc<dyn IggyPublisher>,

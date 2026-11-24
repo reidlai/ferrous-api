@@ -115,7 +115,25 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let app_state = AppState::with_command_handler(publisher, jwt_validator, session_context, command_handler);
+    let mut app_state = AppState::with_command_handler(publisher, jwt_validator, session_context, command_handler);
+
+    if let Ok(tidb_url) = std::env::var("TIDB_URL") {
+        if !tidb_url.trim().is_empty() {
+            match ferrous_api::TiDbOrderQueryEngine::connect(tidb_url.trim()).await {
+                Ok(engine) => {
+                    info!(tidb_url = %tidb_url, "Connected ferrous-api OrderQueryEngine to TiDB (AD-36)");
+                    app_state = app_state.set_query_engine(Arc::new(engine));
+                }
+                Err(err) => {
+                    warn!(
+                        tidb_url = %tidb_url,
+                        error = %err,
+                        "Failed to connect to TiDB; retaining in-memory OrderQueryEngine"
+                    );
+                }
+            }
+        }
+    }
     app_state.event_broadcaster.set_persistent_mode(true);
     app_state.benchmark_broadcaster.set_persistent_mode(true);
     app_state.pipeline_telemetry.set_persistent_mode(true);
