@@ -30,6 +30,27 @@ pub const ORDERS_CURRENT_STATE_TABLE: &str = "orders_current_state";
 
 /// Canonical table name for historical Kaggle Olist orders (AD-34).
 pub const OLIST_ORDERS_TABLE: &str = "olist_orders";
+pub const OLIST_ORDER_ITEMS_TABLE: &str = "olist_order_items";
+pub const OLIST_ORDER_PAYMENTS_TABLE: &str = "olist_order_payments";
+pub const OLIST_ORDER_REVIEWS_TABLE: &str = "olist_order_reviews";
+pub const OLIST_CUSTOMERS_TABLE: &str = "olist_customers";
+pub const OLIST_PRODUCTS_TABLE: &str = "olist_products";
+pub const OLIST_SELLERS_TABLE: &str = "olist_sellers";
+pub const OLIST_GEOLOCATION_TABLE: &str = "olist_geolocation";
+pub const OLIST_CATEGORY_TRANSLATION_TABLE: &str = "olist_category_translation";
+
+/// All 9 Kaggle Olist Delta Lake table names (AD-35).
+pub const ALL_OLIST_TABLES: &[&str] = &[
+    OLIST_ORDERS_TABLE,
+    OLIST_ORDER_ITEMS_TABLE,
+    OLIST_ORDER_PAYMENTS_TABLE,
+    OLIST_ORDER_REVIEWS_TABLE,
+    OLIST_CUSTOMERS_TABLE,
+    OLIST_PRODUCTS_TABLE,
+    OLIST_SELLERS_TABLE,
+    OLIST_GEOLOCATION_TABLE,
+    OLIST_CATEGORY_TRANSLATION_TABLE,
+];
 
 /// Canonical operational table name for federated customer dispute records.
 pub const OPERATIONAL_DISPUTES_TABLE: &str = "operational_disputes";
@@ -1932,6 +1953,125 @@ pub struct DataFusionOrderQueryEngine {
     state: RwLock<VersionedDeltaState>,
 }
 
+/// Generic Delta Lake `TableProvider` for auxiliary Olist fact & dimension tables (AD-35).
+#[derive(Debug, Clone)]
+pub struct GenericOlistDeltaProvider {
+    table_name: String,
+    rows: Vec<serde_json::Value>,
+    delta_version: u64,
+}
+
+impl GenericOlistDeltaProvider {
+    /// Loads NDJSON/JSON active files referenced by `_delta_log/*.json` in `table_dir`.
+    pub fn from_delta_path(
+        table_name: impl Into<String>,
+        table_dir: impl AsRef<Path>,
+    ) -> Result<Self, LakehouseError> {
+        let dir = table_dir.as_ref();
+        let delta_log_dir = dir.join("_delta_log");
+        if !delta_log_dir.is_dir() {
+            return Err(LakehouseError::DeltaLogNotFound(
+                delta_log_dir.display().to_string(),
+            ));
+        }
+
+        let mut commit_files: Vec<PathBuf> = fs::read_dir(&delta_log_dir)
+            .map_err(|e| LakehouseError::StorageIo(e.to_string()))?
+            .filter_map(|e| e.ok().map(|ent| ent.path()))
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("json"))
+            .collect();
+        commit_files.sort();
+
+        let mut version = 0u64;
+        let mut active_files: Vec<String> = Vec::new();
+        for commit_path in &commit_files {
+            if let Some(stem) = commit_path.file_stem().and_then(|s| s.to_str()) {
+                if let Ok(v) = stem.parse::<u64>() {
+                    version = version.max(v);
+                }
+            }
+            if let Ok(content) = fs::read_to_string(commit_path) {
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                        if let Some(p) = val
+                            .get("add")
+                            .and_then(|a| a.get("path"))
+                            .and_then(|s| s.as_str())
+                        {
+                            if !active_files.iter().any(|x| x == p) {
+                                active_files.push(p.to_string());
+                            }
+                        }
+                        if let Some(p) = val
+                            .get("remove")
+                            .and_then(|r| r.get("path"))
+                            .and_then(|s| s.as_str())
+                        {
+                            active_files.retain(|x| x != p);
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut rows = Vec::new();
+        for rel in &active_files {
+            let full = dir.join(rel);
+            if let Ok(text) = fs::read_to_string(&full) {
+                for line in text.lines() {
+                    let t = line.trim();
+                    if t.is_empty() {
+                        continue;
+                    }
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(t) {
+                        rows.push(v);
+                    }
+                }
+            }
+        }
+
+        Ok(Self {
+            table_name: table_name.into(),
+            rows,
+            delta_version: version,
+        })
+    }
+
+    pub fn rows(&self) -> &[serde_json::Value] {
+        &self.rows
+    }
+
+    pub fn delta_version(&self) -> u64 {
+        self.delta_version
+    }
+}
+
+impl TableProvider for GenericOlistDeltaProvider {
+    fn table_name(&self) -> &str {
+        &self.table_name
+    }
+
+    fn provider_kind(&self) -> &str {
+        "delta"
+    }
+
+    fn schema_columns(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn row_count(&self) -> usize {
+        self.rows.len()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 impl DataFusionOrderQueryEngine {
     /// Default `_delta_log` version-check TTL (250ms per AD-31).
     pub const DEFAULT_REFRESH_TTL: std::time::Duration = std::time::Duration::from_millis(250);
@@ -1960,12 +2100,12 @@ impl DataFusionOrderQueryEngine {
         })
     }
 
-    fn sibling_olist_dir(dir: &Path) -> Option<PathBuf> {
+    fn sibling_table_dir(dir: &Path, table_name: &str) -> Option<PathBuf> {
         let name = dir.file_name().and_then(|n| n.to_str())?;
-        if name == OLIST_ORDERS_TABLE {
+        if name == table_name {
             return None;
         }
-        let sibling = dir.parent()?.join(OLIST_ORDERS_TABLE);
+        let sibling = dir.parent()?.join(table_name);
         if sibling.join("_delta_log").is_dir() {
             Some(sibling)
         } else {
@@ -1973,42 +2113,114 @@ impl DataFusionOrderQueryEngine {
         }
     }
 
+    /// Returns the sorted list of all registered Delta Lake tables in the active `SessionContext`.
+    pub fn registered_tables(&self) -> Vec<String> {
+        self.state
+            .read()
+            .map(|g| g.session.table_names())
+            .unwrap_or_default()
+    }
+
     fn load_session(dir: &Path) -> Result<(u64, SessionContext), QueryEngineError> {
         let current_provider = DeltaTableProvider::from_delta_path(ORDERS_CURRENT_STATE_TABLE, dir)?;
-        let current_version = current_provider.delta_metadata().version;
+        let mut combined_version = current_provider.delta_metadata().version;
         let session = SessionContext::new();
 
-        if let Some(olist_dir) = Self::sibling_olist_dir(dir) {
+        // 1. Register auxiliary 8 Olist Delta tables when present as sibling directories (AD-35)
+        let mut items_by_order: HashMap<String, Vec<OrderItem>> = HashMap::new();
+        for &aux_table in ALL_OLIST_TABLES {
+            if aux_table == OLIST_ORDERS_TABLE {
+                continue;
+            }
+            if let Some(aux_dir) = Self::sibling_table_dir(dir, aux_table) {
+                if let Ok(aux_provider) =
+                    GenericOlistDeltaProvider::from_delta_path(aux_table, &aux_dir)
+                {
+                    combined_version =
+                        combined_version.saturating_add(aux_provider.delta_version());
+                    if aux_table == OLIST_ORDER_ITEMS_TABLE {
+                        for row in aux_provider.rows() {
+                            if let Some(oid) = row.get("order_id").and_then(|v| v.as_str()) {
+                                let item_seq = row
+                                    .get("order_item_id")
+                                    .and_then(|v| v.as_i64())
+                                    .unwrap_or(1);
+                                let product_id = row
+                                    .get("product_id")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown")
+                                    .to_string();
+                                let price_cents = row
+                                    .get("price")
+                                    .and_then(|v| v.as_f64())
+                                    .map(|p| (p * 100.0).round() as i64)
+                                    .unwrap_or(0);
+                                items_by_order.entry(oid.to_string()).or_default().push(
+                                    OrderItem {
+                                        item_id: format!("{oid}-{item_seq}"),
+                                        product_id,
+                                        price_cents,
+                                        quantity: 1,
+                                    },
+                                );
+                            }
+                        }
+                    }
+                    session.register_table(aux_table, Arc::new(aux_provider));
+                }
+            }
+        }
+
+        // 2. Merge olist_orders base + orders_current_state CQRS overlay and hydrate Olist items
+        let mut merged = if let Some(olist_dir) = Self::sibling_table_dir(dir, OLIST_ORDERS_TABLE) {
             if let Ok(olist_provider) =
                 DeltaTableProvider::from_delta_path(OLIST_ORDERS_TABLE, &olist_dir)
             {
-                let olist_version = olist_provider.delta_metadata().version;
-                // Merge canonical olist_orders base rows with orders_current_state CQRS overlays
-                // (duplicate order_id in orders_current_state overwrites base olist_orders row).
-                let mut merged = olist_provider.to_records();
-                merged.extend(current_provider.to_records());
-                let mut unified =
-                    DeltaTableProvider::from_records(ORDERS_CURRENT_STATE_TABLE, merged);
-                unified.table_path = Some(dir.to_path_buf());
-                unified.delta_metadata = current_provider.delta_metadata().clone();
+                combined_version =
+                    combined_version.saturating_add(olist_provider.delta_metadata().version);
+                let base_rows = olist_provider.to_records();
                 session.register_table(OLIST_ORDERS_TABLE, Arc::new(olist_provider));
-                session.register_table(ORDERS_CURRENT_STATE_TABLE, Arc::new(unified));
-                return Ok((current_version.saturating_add(olist_version), session));
+                base_rows
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        };
+
+        merged.extend(current_provider.to_records());
+
+        if !items_by_order.is_empty() {
+            for rec in &mut merged {
+                if let Some(order_items) = items_by_order.get(&rec.order_id) {
+                    if rec.items.is_empty() {
+                        rec.items = order_items.clone();
+                    }
+                    if rec.total_amount_cents == 0 {
+                        rec.total_amount_cents =
+                            order_items.iter().map(|i| i.price_cents).sum();
+                    }
+                }
             }
         }
 
-        session.register_table(ORDERS_CURRENT_STATE_TABLE, Arc::new(current_provider));
-        Ok((current_version, session))
+        let mut unified = DeltaTableProvider::from_records(ORDERS_CURRENT_STATE_TABLE, merged);
+        unified.table_path = Some(dir.to_path_buf());
+        unified.delta_metadata = current_provider.delta_metadata().clone();
+        session.register_table(ORDERS_CURRENT_STATE_TABLE, Arc::new(unified));
+        Ok((combined_version, session))
     }
 
     fn latest_delta_log_version(dir: &Path) -> Result<u64, QueryEngineError> {
-        let base_ver = Self::table_delta_log_version(dir)?;
-        if let Some(olist_dir) = Self::sibling_olist_dir(dir) {
-            if let Ok(olist_ver) = Self::table_delta_log_version(&olist_dir) {
-                return Ok(base_ver.saturating_add(olist_ver));
+        let mut total_ver = Self::table_delta_log_version(dir)?;
+        for &olist_tbl in ALL_OLIST_TABLES {
+            if let Some(sib) = Self::sibling_table_dir(dir, olist_tbl) {
+                if let Ok(v) = Self::table_delta_log_version(&sib) {
+                    total_ver = total_ver.saturating_add(v);
+                }
             }
         }
-        Ok(base_ver)
+        Ok(total_ver)
     }
 
     fn table_delta_log_version(dir: &Path) -> Result<u64, QueryEngineError> {
