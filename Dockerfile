@@ -2,7 +2,7 @@
 # Hardened rootless FROM scratch container build for ferrous-api Axum API gateway
 # Adheres strictly to AD-24 (<50MB footprint, UID 10001, static musl, Day-0 defense)
 
-FROM rust:1.99-alpine AS builder
+FROM rust:1.98-alpine AS builder
 
 # hadolint ignore=DL3018
 RUN apk add --no-cache musl-dev gcc g++ make cmake ca-certificates binutils

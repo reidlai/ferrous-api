@@ -32,6 +32,7 @@ futures = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 jsonwebtoken = { version = "11.1.0", features = ["aws_lc_rs"] }
+sqlx = { version = "0.8", default-features = false, features = ["mysql", "runtime-tokio", "tls-rustls", "chrono", "json"] }
 
 [dev-dependencies]
 http-body-util = "0.1"

@@ -14,6 +14,7 @@ pub use query_engine as lakehouse;
 pub mod sse;
 pub mod state;
 pub mod telemetry;
+pub mod tidb_query_engine;
 
 pub use auth::{AuthError, JwtValidator, RequireScope, SCOPE_API_READ, SCOPE_API_WRITE};
 pub use ferrous_cqrses::callback::{
@@ -54,6 +55,7 @@ pub use telemetry::{
     DEFAULT_SOURCE_HTTP_TIMEOUT, PIPELINE_STREAM_INSTANCE, PIPELINE_TELEMETRY_SSE_NAME,
     SOURCE_STATUS_AVAILABLE, SOURCE_STATUS_UNAVAILABLE,
 };
+pub use tidb_query_engine::TiDbOrderQueryEngine;
 
 use axum::Router;
 use std::io::{BufRead, BufReader, Write};
