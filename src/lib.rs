@@ -158,8 +158,28 @@ pub fn create_router_with_app_state(app_state: AppState) -> Router {
     let streams = Arc::new(StreamsHandler::with_state(app_state.clone()));
 
     let auth_validator = Arc::clone(&app_state.jwt_validator);
+    let olist_query_engine = Arc::clone(&app_state.query_engine);
+    let olist_tables_router = Router::new().route(
+        "/api/v1/olist/tables",
+        axum::routing::get(move || {
+            let engine = Arc::clone(&olist_query_engine);
+            async move {
+                match engine.olist_table_stats().await {
+                    Ok(stats) => axum::response::IntoResponse::into_response((
+                        axum::http::StatusCode::OK,
+                        axum::Json(stats),
+                    )),
+                    Err(err) => axum::response::IntoResponse::into_response(
+                        err.to_api_error(Some("/api/v1/olist/tables".to_string())),
+                    ),
+                }
+            }
+        }),
+    );
+
     let api_state = ApiState::new(orders, queries, streams);
     build_api_router(api_state)
+        .merge(olist_tables_router)
         .merge(mcp::build_mcp_router(app_state.clone()))
         .layer(RequireScope::for_path_prefix(
             Arc::clone(&app_state.jwt_validator),

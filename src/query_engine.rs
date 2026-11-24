@@ -211,6 +211,13 @@ impl OrderRecord {
                 product_id: "prod-4412".to_string(),
                 price_cents: self.total_amount_cents,
                 quantity: 1,
+                seller_id: None,
+                seller_city: None,
+                seller_state: None,
+                freight_cents: None,
+                category_name: None,
+                category_english: None,
+                shipping_limit_date: None,
             }]
         } else {
             self.items.clone()
@@ -234,6 +241,18 @@ impl OrderRecord {
             items,
             created_at,
             updated_at,
+            order_purchase_timestamp: Some(created_at),
+            order_approved_at: None,
+            order_delivered_carrier_date: None,
+            order_delivered_customer_date: None,
+            order_estimated_delivery_date: None,
+            courtesy_credit_cents: Some(self.credit_issued_cents),
+            customer_unique_id: None,
+            customer_zip_code_prefix: None,
+            customer_city: None,
+            customer_state: None,
+            payments: Vec::new(),
+            review: None,
         }
     }
 
@@ -599,6 +618,13 @@ impl DeltaTableProvider {
                     product_id: "prod-4412".to_string(),
                     price_cents: 2710,
                     quantity: 2,
+                    seller_id: None,
+                    seller_city: None,
+                    seller_state: None,
+                    freight_cents: None,
+                    category_name: None,
+                    category_english: None,
+                    shipping_limit_date: None,
                 }],
             },
             OrderRecord {
@@ -615,6 +641,13 @@ impl DeltaTableProvider {
                     product_id: "prod-8821".to_string(),
                     price_cents: 1999,
                     quantity: 2,
+                    seller_id: None,
+                    seller_city: None,
+                    seller_state: None,
+                    freight_cents: None,
+                    category_name: None,
+                    category_english: None,
+                    shipping_limit_date: None,
                 }],
             },
             OrderRecord {
@@ -631,6 +664,13 @@ impl DeltaTableProvider {
                     product_id: "prod-9900".to_string(),
                     price_cents: 8900,
                     quantity: 1,
+                    seller_id: None,
+                    seller_city: None,
+                    seller_state: None,
+                    freight_cents: None,
+                    category_name: None,
+                    category_english: None,
+                    shipping_limit_date: None,
                 }],
             },
         ];
@@ -1878,6 +1918,25 @@ pub trait OrderQueryEngine: Send + Sync + Debug {
     fn current_delta_version(&self) -> Option<u64> {
         None
     }
+
+    /// Returns row counts and metadata for all 9 Kaggle Olist tables + `orders_current_state` (Story 24.1).
+    async fn olist_table_stats(&self) -> Result<crate::generated::OlistTablesResponse, QueryEngineError> {
+        let tables = crate::tidb_query_engine::TIDB_OLIST_TABLE_METADATA
+            .iter()
+            .map(|&(table_name, role, ingestion_mode)| crate::generated::OlistTableStat {
+                table_name: table_name.to_string(),
+                role: role.to_string(),
+                ingestion_mode: ingestion_mode.to_string(),
+                row_count: 0,
+                status: "empty".to_string(),
+            })
+            .collect();
+        Ok(crate::generated::OlistTablesResponse {
+            storage_engine: "in-memory".to_string(),
+            tables,
+            total_rows: 0,
+        })
+    }
 }
 
 /// Fast, zero-I/O in-memory [`OrderQueryEngine`] backend for unit tests (AD-31).
@@ -2161,6 +2220,19 @@ impl DataFusionOrderQueryEngine {
                                         product_id,
                                         price_cents,
                                         quantity: 1,
+                                        seller_id: row
+                                            .get("seller_id")
+                                            .and_then(|v| v.as_str())
+                                            .map(str::to_string),
+                                        seller_city: None,
+                                        seller_state: None,
+                                        freight_cents: row
+                                            .get("freight_value")
+                                            .and_then(|v| v.as_f64())
+                                            .map(|f| (f * 100.0).round() as i64),
+                                        category_name: None,
+                                        category_english: None,
+                                        shipping_limit_date: None,
                                     },
                                 );
                             }
