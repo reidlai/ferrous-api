@@ -277,16 +277,72 @@ impl ValidatePayload for CancelOrderRequest {
     }
 }
 
-/// Individual line item within an order.
+/// Individual line item within an order (aligned with `olist_order_items` + dimensions).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrderItem {
     pub item_id: String,
     pub product_id: String,
     pub price_cents: i64,
     pub quantity: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seller_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seller_city: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seller_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freight_cents: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_english: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shipping_limit_date: Option<DateTime<Utc>>,
 }
 
-/// Detailed order state queried from lakehouse.
+/// Payment leg from `olist_order_payments`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrderPayment {
+    pub payment_sequential: i32,
+    pub payment_type: String,
+    pub payment_installments: i32,
+    pub payment_value_cents: i64,
+}
+
+/// Customer review record from `olist_order_reviews`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OrderReview {
+    pub review_id: String,
+    pub review_score: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_comment_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_comment_message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_creation_date: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_answer_timestamp: Option<DateTime<Utc>>,
+}
+
+/// Row count and metadata for a single Olist / CQRS TiDB table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OlistTableStat {
+    pub table_name: String,
+    pub role: String,
+    pub ingestion_mode: String,
+    pub row_count: i64,
+    pub status: String,
+}
+
+/// Live summary of all 9 Kaggle Olist tables + CQRS `orders_current_state` in TiDB.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OlistTablesResponse {
+    pub storage_engine: String,
+    pub tables: Vec<OlistTableStat>,
+    pub total_rows: i64,
+}
+
+/// Detailed order state queried from TiDB / lakehouse (9-table Olist + CQRS overlay).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrderDetails {
     pub order_id: String,
@@ -297,6 +353,30 @@ pub struct OrderDetails {
     pub items: Vec<OrderItem>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order_purchase_timestamp: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order_approved_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order_delivered_carrier_date: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order_delivered_customer_date: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order_estimated_delivery_date: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub courtesy_credit_cents: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub customer_unique_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub customer_zip_code_prefix: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub customer_city: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub customer_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub payments: Vec<OrderPayment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<OrderReview>,
 }
 
 /// Summary order record for lakehouse list queries.
